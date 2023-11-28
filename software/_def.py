@@ -1,0 +1,42 @@
+MCU_CMD_LENGTH = 15
+MCU_MSG_LENGTH = 30
+
+MEDIUM_WATER = 0x08
+MEDIUM_IPA = 0x15
+MEDIA = [MEDIUM_IPA, MEDIUM_WATER]
+
+# MCU - COMPUTER
+T_DIFF_COMPUTER_MCU_MISMATCH_FAULT_THRESHOLD_SECONDS = 3
+
+class MCU_CONSTANTS:
+    # pressure sensor SSCMRRV015PD2A3
+    _output_min = 1638; # 10% of 2^14
+    _output_max = 14745; # 90% of 2^14
+    _p_min = -15; # psi
+    _p_max = 15; # psi
+    VOLUME_UL_MAX = 5000
+    SCALE_FACTOR_FLOW = 10 # Scale Factor for flow rate measurement, ul/min, SLF3S-0600F
+    SLF3X_MAX_VAL_uL_MIN = 3520
+
+class CMD_SET:
+    CLEAR  = 0                       # No additional data
+    INITIALIZE_DISC_PUMP = 1         # Command, power limit high byte, power limit low byte, source, mode, stream.
+    INITIALIZE_PRESSURE_SENSORS = 2
+    INITIALIZE_FLOW_SENSOR = 3
+    INITIALIZE_BUBBLE_SENSORS = 4
+    INITIALIZE_VALVES = 5
+    INITIALIZE_BANG_BANG_PARAMS = 6
+    INITIALIZE_PID_PARAMS = 7
+    PRETEST_PRESSURE_START = 6
+    PRETEST_VACUUM_START = 7
+    LOAD_MEDIUM_START = 8
+    UNLOAD_MEDIUM_START = 9
+    CLEAR_MEDIUM_START = 10
+    SET_SOLENOID_VALVES = 11
+    LOAD_MEDIUM_VOLUME_START = 12
+    UNLOAD_MEDIUM_VOLUME_START = 16
+    VENT_VB0 = 13
+    INITIALIZE_SELECTOR_VALVE = 14
+    SET_SELECTOR_VALVE = 15
+    SET_DB_TIME = 17
+    CALIB_FLOW = 18
