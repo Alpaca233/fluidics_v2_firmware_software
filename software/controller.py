@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 from time import time
 
+SERIAL_NUMBER_DEBUGGING = '13995310'
+
 # Print messages with timestamp
 def print_message(msg):
     print(datetime.now().strftime('%m/%d %H:%M:%S') + ' : '  + msg )
@@ -15,6 +17,16 @@ def print_message(msg):
 # Split a byte into two nibbles
 def split_byte(byte_in):
     return ((byte_in >> 4), (byte_in & 0x0F))
+# Split a multi-byte uint into a list of bytes
+def uint_to_bytes(uint, n_bytes):
+    out = []
+    n_bytes_req = (np.ceil(np.log2(max(uint, 1))/8))
+    assert n_bytes_req <= n_bytes, f"Overflow error, need at least {n_bytes_req} bytes"
+    for i in range(n_bytes-1, -1, -1):
+        shift_amt = i * 8
+        shifted = uint >> shift_amt
+        out.append(np.uint8(shifted & 0xFF))
+    return out
 
 # Define basic input/output from the microcontroller
 class Microcontroller():
@@ -45,8 +57,11 @@ class Microcontroller():
     
     def send_command(self, cmd):
         # Format using COBS (for PacketSerial library)
+        print(cmd)
+        cmd = bytearray(cmd)
         if self.use_cobs:
-            cmd = cobs.encode(bytearray(cmd))
+            cmd = bytearray(cobs.encode(cmd))
+            cmd.append(0)
         
         self.serial.write(cmd)
         return
@@ -91,7 +106,7 @@ class Microcontroller():
     
 
 class FluidController():
-    def __init__(self, microcontroller, log_measurements = False):
+    def __init__(self, microcontroller, log_measurements = False, debug = False):
         self.microcontroller = microcontroller
         self.log_measurements = log_measurements
 
@@ -103,6 +118,7 @@ class FluidController():
         self.cmd_sent = CMD_SET.CLEAR
         self.timestamp_last_mismatch = None
         self.mcu_state = None
+        self.debug = debug
 
         return
 
@@ -179,7 +195,7 @@ class FluidController():
         vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/0xFFFF)*MCU_CONSTANTS.VOLUME_UL_MAX
 
         # Write the data to file
-        if self.log_measurements:
+        if self.log_measurements or self.debug:
             line = f"""{datetime.now().strftime('%m/%d %H:%M:%S')}, \
                        {MCU_received_command_UID}, \
                        {MCU_received_command}, \
@@ -202,11 +218,14 @@ class FluidController():
                        {flow_1:.2f}, \
                        {flow_2:.2f}, \
                        {vol_ul:.2f}\n"""
-            self.measurement_file.write(line)
-            self.counter_measurement_file_flush += 1
-            if self.counter_measurement_file_flush >= 500:
-                self.counter_measurement_file_flush = 0
-                self.measurement_file.flush()
+            if self.log_measurements:
+                self.measurement_file.write(line)
+                self.counter_measurement_file_flush += 1
+                if self.counter_measurement_file_flush >= 500:
+                    self.counter_measurement_file_flush = 0
+                    self.measurement_file.flush()
+            if self.debug:
+                print(line)
 
         # Check for mismatch between received command and transmitted command
         if (MCU_received_command != self.cmd_sent) or (MCU_received_command_UID != self.cmd_uid):
@@ -237,25 +256,16 @@ class FluidController():
             pass
         elif command == CMD_SET.INITIALIZE_DISC_PUMP:
             # For disc pump, we need pwr limit (2 bytes), source, mode, and stream config
-            assert len(args) == 4, "Need power limit, source, mode, stream positional arguments"
-            pwr_lim = np.int16(args[0])
-            assert pwr_lim == args[0], "Power limit not an int16"
-            src = np.uint8(args[1])
-            assert src == args[1], "Source setting is not a uint8"
-            mode = np.uint8(args[2])
-            assert mode == args[2], "Mode setting is not a uint8"
-            stream = np.uint8(args[3])
-            assert stream == args[3], "Stream setting is not a uint8"
+            assert len(args) == 1, "Need power limit"
+            pwr_lim = np.uint16(args[0])
+            assert pwr_lim == args[0], "Power limit not a uint16"
 
-            pwr_lim_hi = pwr_lim >> 8
-            pwr_lim_lo = pwr_lim & 0xFF
+            pwr_lim_hi, pwr_lim_lo = uint_to_bytes(pwr_lim, 2)
+
             command_array.append(pwr_lim_hi)
             command_array.append(pwr_lim_lo)
-            command_array.append(src) #src
-            command_array.append(mode) #mode
-            command_array.append(stream) #stream
             pass
-        elif command == CMD_SET.INITIALIZE_PRESSURE_SENSORS:
+        elif command == CMD_SET.INITIALIZE_PRESSURE_SENSOR:
             # Need index of pressure sensor to init
             assert len(args) == 1, "Need sensor index"
             idx = np.uint8(args[0])
@@ -280,27 +290,169 @@ class FluidController():
         elif command == CMD_SET.INITIALIZE_BUBBLE_SENSORS:
             # Need no additional info
             pass
+        elif command == CMD_SET.INITIALIZE_VALVES:
+            # Need no additional info
+            pass
         elif command == CMD_SET.INITIALIZE_BANG_BANG_PARAMS:
-            # Need low threshold, high threshold, min out, max out, and timestep
-            assert len(args) == 5, "Need low/high thresholds, min/max outputs, and timestep (ms)"
-            timestep = np.uint32(args[4])
-            assert timestep == args[4], "Timestep is not uint32"
+            # Need direction, low threshold, high threshold, min out, max out, and timestep
+            assert len(args) == 6, "Need direction bool, low/high thresholds, min/max outputs, and timestep (ms)"
+            
+            fwd_back = bool(args[0])
+            assert fwd_back == args[0], "forward/backward flow setting is not a boolean"
 
-            t_low = np.uint16((args[0]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
-            t_high= np.uint16((args[1]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            t_lower_intermediate = int((args[1]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            t_lower = np.uint16(t_lower_intermediate)
+            assert t_lower_intermediate == t_lower, "Error calculating lower bound"
+            t_upper_intermediate = int((args[2]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            t_upper = np.uint16(t_upper_intermediate)
+            assert t_upper_intermediate == t_upper, "Error calculating upper bound"
+
+            o_lower_intermediate = int((args[3]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_lower = np.uint16(o_lower_intermediate)
+            assert o_lower_intermediate == o_lower, "Error calculating lower output"
+            o_upper_intermediate = int((args[4]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_upper = np.uint16(o_upper_intermediate)
+            assert o_upper_intermediate == o_upper, "Error calculating upper output"
+
+            timestep = np.uint32(args[5])
+            assert timestep == args[5], "Timestep is not uint32"
+
+            t_lower_hi, t_lower_lo = uint_to_bytes(t_lower, 2)
+            t_upper_hi, t_upper_lo = uint_to_bytes(t_upper, 2)
+            o_lower_hi, o_lower_lo = uint_to_bytes(o_lower, 2)
+            o_upper_hi, o_upper_lo = uint_to_bytes(o_upper , 2)
+
+            tstep_3, tstep_2, tstep_1, tstep_0 = uint_to_bytes(timestep, 4)
+
+            command_array.append(fwd_back)
+            command_array.append(t_lower_hi)
+            command_array.append(t_lower_lo)
+            command_array.append(t_upper_hi)
+            command_array.append(t_upper_lo)
+            command_array.append(o_lower_hi)
+            command_array.append(o_lower_lo)
+            command_array.append(o_upper_hi)
+            command_array.append(o_upper_lo)
+            command_array.append(tstep_3)
+            command_array.append(tstep_2)
+            command_array.append(tstep_1)
+            command_array.append(tstep_0)
+
             pass
         elif command == CMD_SET.INITIALIZE_PID_PARAMS:
-            # 
+            # Need Kp, Ki, Kd, intergral winding limit, min/max outputs, and timestep
+            assert len(args) == 7, "Need Kp/Ki/Kd, winding limit, min/max outputs, and timestep (ms)"
+
+            kp_intermediate = int((args[0]/MCU_CONSTANTS.KP_MAX) * np.iinfo(np.uint16).max)
+            kp = np.uint16(kp_intermediate)
+            assert kp_intermediate == kp, "Error calculating Kp"
+
+            ki_intermediate = int((args[0]/MCU_CONSTANTS.KI_MAX) * np.iinfo(np.uint16).max)
+            ki = np.uint16(ki_intermediate)
+            assert ki_intermediate == ki, "Error calculating Ki"
+
+            kd_intermediate = int((args[0]/MCU_CONSTANTS.KD_MAX) * np.iinfo(np.uint16).max)
+            kd = np.uint16(kd_intermediate)
+            assert kd_intermediate == kd, "Error calculating Kd"
+
+            ilim_intermediate = int((args[0]/MCU_CONSTANTS.ILIM_MAX) * np.iinfo(np.uint16).max)
+            ilim = np.uint16(ilim_intermediate)
+            assert ilim_intermediate == ilim, "Error calculating integral winding limit"
+            
+
+            o_lower_intermediate = int((args[4]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_lower = np.uint16(o_lower_intermediate)
+            assert o_lower_intermediate == o_lower, "Error calculating lower output"
+            o_upper_intermediate = int((args[5]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_upper = np.uint16(o_upper_intermediate)
+            assert o_upper_intermediate == o_upper, "Error calculating upper output"
+
+            timestep = np.uint32(args[6])
+            assert timestep == args[6], "Timestep is not uint32"
+
+            kp_hi, kp_lo = uint_to_bytes(kp, 2)
+            ki_hi, ki_lo = uint_to_bytes(ki, 2)
+            kd_hi, kd_lo = uint_to_bytes(kd, 2)
+            ilim_hi, ilim_lo = uint_to_bytes(ilim, 2)
+            o_lower_hi, o_lower_lo = uint_to_bytes(o_lower, 2)
+            o_upper_hi, o_upper_lo = uint_to_bytes(o_upper , 2)
+
+            tstep_3, tstep_2, tstep_1, tstep_0 = uint_to_bytes(timestep, 4)
+
+            command_array.append(kp_hi)
+            command_array.append(kp_lo)
+            command_array.append(ki_hi)
+            command_array.append(ki_lo)
+            command_array.append(kd_hi)
+            command_array.append(kd_lo)
+            command_array.append(ilim_hi)
+            command_array.append(ilim_lo)
+            command_array.append(o_lower_hi)
+            command_array.append(o_lower_lo)
+            command_array.append(o_upper_hi)
+            command_array.append(o_upper_lo)
+            command_array.append(tstep_3)
+            command_array.append(tstep_2)
+            command_array.append(tstep_1)
+            command_array.append(tstep_0)
+            pass
+        elif command == CMD_SET.SET_SOLENOID_VALVES:
+            # For setting all valves, need 16 bit setting
+            assert len(args) == 1, "Need setting"
+            setting = np.uint16(args[0])
+            assert setting == args[0], "Setting not an int16"
+
+            setting_hi, setting_lo = uint_to_bytes(setting, 2)
+            command_array.append(setting_hi)
+            command_array.append(setting_lo)
+            pass
+        elif command == CMD_SET.SET_SOLENOID_VALVE:
+            # For setting an individual valve, need on/off bool and index
+            assert len(args) == 2, "Need on/off bool and index"
+            on_off = bool(args[0])
+            assert on_off == args[0], "on_off setting is not a boolean"
+            idx = np.uint8(args[1])
+            assert idx == args[1], "idx is not uint8"
+
+            command_array.append(on_off)
+            command_array.append(idx)
+            pass
+        elif command == CMD_SET.SET_PUMP_PWR_OPEN_LOOP:
+            # To set the pump power, we just need the power
+            assert len(args) == 1, "Need power (milliwatts)"
+
+            pwr_intermediate = np.uint16((args[0]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
+            pwr = np.uint16(pwr_intermediate)
+            assert pwr_intermediate == pwr, "Error calculating power setting"
+
+            pwr_hi, pwr_lo = uint_to_bytes(pwr, 2)
+            command_array.append(pwr_hi)
+            command_array.append(pwr_lo)
+            pass
+        elif command == CMD_SET.INITIALIZE_ROTARY:
+            # Initialize rotary valve with index and max positions
+            assert len(args) == 2, "Need index and number of positions"
+            idx = np.uint8(args[0])
+            assert idx == args[0], "index is not uint8"
+            n_pos = np.uint8(args[1])
+            assert n_pos == args[1], "Number of positions is not uint8"
+
+            command_array.append(idx)
+            command_array.append(n_pos)
+            pass
+        elif command == CMD_SET.SET_ROTARY_VALVE:
+            # Set rotary valve position, we need index and target position
+            assert len(args) == 2, "Need index and target position"
+            idx = np.uint8(args[0])
+            assert idx == args[0], "index is not uint8"
+            target = np.uint8(args[1])
+            assert target == args[1], "target position is not uint8"
+
+            command_array.append(idx)
+            command_array.append(target)
             pass
         else:
             # If we don't recognize the command, raise an error
             raise Exception("Command not recognized")
 
-        # TODO: implement rest of command-sepcific formatting
-
         self.microcontroller.send_command(command_array)
-
-def list_devices():
-    for p in serial.tools.list_ports.comports():
-        print(p.__dict__)
-        print('\n')
