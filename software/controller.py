@@ -10,15 +10,21 @@ from time import time
 
 SERIAL_NUMBER_DEBUGGING = '13995310'
 
-# Print messages with timestamp
 def print_message(msg):
+    '''
+    Print message with timestamp prepended
+    '''
     print(datetime.now().strftime('%m/%d %H:%M:%S') + ' : '  + msg )
     return
-# Split a byte into two nibbles
 def split_byte(byte_in):
+    '''
+    Split single byte int two nibbles
+    '''
     return ((byte_in >> 4), (byte_in & 0x0F))
-# Split a multi-byte uint into a list of bytes
 def uint_to_bytes(uint, n_bytes):
+    '''
+    Split unsigned integer into n bytes. Returns error if number of bytes is too small
+    '''
     out = []
     n_bytes_req = (np.ceil(np.log2(max(uint, 1))/8))
     assert n_bytes_req <= n_bytes, f"Overflow error, need at least {n_bytes_req} bytes"
@@ -31,6 +37,11 @@ def uint_to_bytes(uint, n_bytes):
 # Define basic input/output from the microcontroller
 class Microcontroller():
     def __init__(self, serial_number, use_cobs = True):
+        '''
+        Arguments:
+            string serial_number: serial number of target microcontroller
+            bool use_cobs: set True to enable Consistent Overhead Byte Stuffing encoding, default value True
+        '''
         self.serial = None
         self.serial_number = serial_number
         self.use_cobs = use_cobs
@@ -43,11 +54,17 @@ class Microcontroller():
         return
     
     def __del__(self):
+        '''
+        Close the serial port
+        '''
         self.serial.close()
         return
     
     def begin(self):
-         # Find a serial port that matches the serial number
+        '''
+        Find a Serial device that matches the serial number and connect to it.
+        '''
+        self.read_buffer = []
         controller_ports = [ p.device for p in serial.tools.list_ports.comports() if self.serial_number == p.serial_number]
         if not controller_ports:
             raise IOError("No Controller Found")
@@ -55,9 +72,16 @@ class Microcontroller():
         print_message('Teensy connected')
         return
     
-    def send_command(self, cmd):
-        # Format using COBS (for PacketSerial library)
-        print(cmd)
+    def send_mcu_command(self, cmd):
+        '''
+        Format using COBS (for PacketSerial library) if necessary and write
+        Arguments:
+            uint8[] cmd: list of uint8 or equivalent
+        Output:
+            Writes data over Serial
+        Returns:
+            None
+        '''
         cmd = bytearray(cmd)
         if self.use_cobs:
             cmd = bytearray(cobs.encode(cmd))
@@ -67,10 +91,20 @@ class Microcontroller():
         return
     
     def read_received_packet_nowait(self):
+        '''
+        If there is serial data available, return it as an array of bytes.
+        If we are using COBS, decode it first
+        Arguments:
+            None
+        Inputs:
+            Reads data over Serial
+        Returns:
+            uint8_t data[] or None: either the decoded data (variable length) or None
+        '''
         if self.serial.in_waiting == 0:
             return None
-        # Read data into read_buffer until we hit an end-of-packet (0x00)
         if self.use_cobs:
+            # Read data into read_buffer until we hit an end-of-packet (0x00)
             while self.serial.in_waiting:
                 byte_in = ord(self.serial.read())
                 if byte_in != 0:
@@ -105,9 +139,16 @@ class Microcontroller():
         return output
     
 
-class FluidController():
-    def __init__(self, microcontroller, log_measurements = False, debug = False):
-        self.microcontroller = microcontroller
+class FluidController(Microcontroller):
+    def __init__(self, serial_number, use_cobs = True, log_measurements = False, debug = False):
+        '''
+        Initialize logging and microcontroller connection. This class inherits from Microcontroller
+        Arguments:
+            String serial_number: serial number of the microcontroller
+            bool use_cobs: use Consistent Overhead Byte Stuffing for Serial I/O
+            bool log_measurements: save logs to a CSV
+            bool debug: print debug info
+        '''
         self.log_measurements = log_measurements
 
         if(self.log_measurements):
@@ -120,20 +161,28 @@ class FluidController():
         self.mcu_state = None
         self.debug = debug
 
+        self.serial_number = serial_number
+        self.use_cobs = use_cobs
+
         return
 
     def __del__(self):
+        '''Close the logfile if it's being used'''
         if self.log_measurements:
             self.measurement_file.close()
         return
     
     def add_uid_to_cmd(self, cmd):
+        '''Break cmd_uid into two bytes and overwrite the first two bytes of the command array with the uid'''
         cmd[0] = self.cmd_uid >> 8
         cmd[1] = self.cmd_uid & 0xFF
         return cmd
     
     def get_mcu_status(self):
-        msg = self.microcontroller.read_received_packet_nowait()
+        '''
+        Read a fixed-length packet from the microcontroller. If there is data available, unpack it. If in debug mode, print out the data. If we are aving logs, write to disc
+        '''
+        msg = self.read_received_packet_nowait()
         if msg is None:
             return None
         assert (len(msg) == MCU_MSG_LENGTH), f"Expected message of len {MCU_CMD_LENGTH}, got len {len(msg)}"
@@ -241,15 +290,17 @@ class FluidController():
         return MCU_command_execution_status
     
     def send_command(self, command, *args):
-        # Commands are formatted as UID, command, parameters (arb. length)
-        # Parameters are formatted differently depending on the command
+        '''
+        Commands are formatted as UID, command, parameters (arb. length)
+        Parameters are formatted differently depending on the command
+        '''
         command_array = [0, 0] # Initialize with two empty cells for UID
         self.add_uid_to_cmd(command_array)
         self.cmd_uid += 1
 
-        cmd = np.uint8(command)
-        assert cmd == command, "Command is not uint8"
-        command_array.append(cmd)
+        command_target = np.uint8(command)
+        assert command_target == command, "Command is not uint8"
+        command_array.append(command_target)
 
         if command == CMD_SET.CLEAR:
             self.cmd_uid = 0
@@ -455,4 +506,4 @@ class FluidController():
             # If we don't recognize the command, raise an error
             raise Exception("Command not recognized")
 
-        self.microcontroller.send_command(command_array)
+        self.send_mcu_command(command_array)
