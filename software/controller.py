@@ -330,7 +330,7 @@ class FluidController(Microcontroller):
             idx = np.uint8(args[0])
             assert idx == args[0], "Index not an int16"
             medium = np.uint8(args[1])
-            assert medium in MEDIA, "Medium not recognized, must be MEDIUM_IPA or MEDIUM_WATER"
+            assert medium in MCU_CONSTANTS.MEDIA, "Medium not recognized, must be MEDIUM_IPA or MEDIUM_WATER"
             do_crc = bool(args[2])
             assert do_crc == args[2], "do_crc setting is not a boolean"
 
@@ -345,11 +345,11 @@ class FluidController(Microcontroller):
             # Need no additional info
             pass
         elif command == CMD_SET.INITIALIZE_BANG_BANG_PARAMS:
-            # Need direction, low threshold, high threshold, min out, max out, and timestep
-            assert len(args) == 6, "Need direction bool, low/high thresholds, min/max outputs, and timestep (ms)"
+            # Need loop type, low threshold, high threshold, min out, max out, and timestep
+            assert len(args) == 6, "Need loop type, low/high thresholds, min/max outputs, and timestep (ms)"
             
-            fwd_back = bool(args[0])
-            assert fwd_back == args[0], "forward/backward flow setting is not a boolean"
+            loop_type = np.uint8(args[0])
+            assert loop_type in MCU_CONSTANTS.BB_LOOP_TYPES, "loop type is not a bang-bang type"
 
             t_lower_intermediate = int((args[1]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
             t_lower = np.uint16(t_lower_intermediate)
@@ -358,10 +358,10 @@ class FluidController(Microcontroller):
             t_upper = np.uint16(t_upper_intermediate)
             assert t_upper_intermediate == t_upper, "Error calculating upper bound"
 
-            o_lower_intermediate = int((args[3]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_lower_intermediate = int((args[3]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
             o_lower = np.uint16(o_lower_intermediate)
             assert o_lower_intermediate == o_lower, "Error calculating lower output"
-            o_upper_intermediate = int((args[4]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_upper_intermediate = int((args[4]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
             o_upper = np.uint16(o_upper_intermediate)
             assert o_upper_intermediate == o_upper, "Error calculating upper output"
 
@@ -375,7 +375,7 @@ class FluidController(Microcontroller):
 
             tstep_3, tstep_2, tstep_1, tstep_0 = uint_to_bytes(timestep, 4)
 
-            command_array.append(fwd_back)
+            command_array.append(loop_type)
             command_array.append(t_lower_hi)
             command_array.append(t_lower_lo)
             command_array.append(t_upper_hi)
@@ -391,35 +391,38 @@ class FluidController(Microcontroller):
 
             pass
         elif command == CMD_SET.INITIALIZE_PID_PARAMS:
-            # Need Kp, Ki, Kd, intergral winding limit, min/max outputs, and timestep
-            assert len(args) == 7, "Need Kp/Ki/Kd, winding limit, min/max outputs, and timestep (ms)"
+            # Need loop type, Kp, Ki, Kd, intergral winding limit, min/max outputs, and timestep
+            assert len(args) == 8, "Need loop type, Kp/Ki/Kd, winding limit, min/max outputs, and timestep (ms)"
 
-            kp_intermediate = int((args[0]/MCU_CONSTANTS.KP_MAX) * np.iinfo(np.uint16).max)
+            loop_type = np.uint8(args[0])
+            assert loop_type in MCU_CONSTANTS.PID_LOOP_TYPES, "loop type is not PID type"
+
+            kp_intermediate = int((args[1]/MCU_CONSTANTS.KP_MAX) * np.iinfo(np.uint16).max)
             kp = np.uint16(kp_intermediate)
             assert kp_intermediate == kp, "Error calculating Kp"
 
-            ki_intermediate = int((args[0]/MCU_CONSTANTS.KI_MAX) * np.iinfo(np.uint16).max)
+            ki_intermediate = int((args[2]/MCU_CONSTANTS.KI_MAX) * np.iinfo(np.uint16).max)
             ki = np.uint16(ki_intermediate)
             assert ki_intermediate == ki, "Error calculating Ki"
 
-            kd_intermediate = int((args[0]/MCU_CONSTANTS.KD_MAX) * np.iinfo(np.uint16).max)
+            kd_intermediate = int((args[3]/MCU_CONSTANTS.KD_MAX) * np.iinfo(np.uint16).max)
             kd = np.uint16(kd_intermediate)
             assert kd_intermediate == kd, "Error calculating Kd"
 
-            ilim_intermediate = int((args[0]/MCU_CONSTANTS.ILIM_MAX) * np.iinfo(np.uint16).max)
+            ilim_intermediate = int((args[4]/MCU_CONSTANTS.ILIM_MAX) * np.iinfo(np.uint16).max)
             ilim = np.uint16(ilim_intermediate)
             assert ilim_intermediate == ilim, "Error calculating integral winding limit"
             
 
-            o_lower_intermediate = int((args[4]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_lower_intermediate = int((args[5]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
             o_lower = np.uint16(o_lower_intermediate)
             assert o_lower_intermediate == o_lower, "Error calculating lower output"
-            o_upper_intermediate = int((args[5]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            o_upper_intermediate = int((args[6]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
             o_upper = np.uint16(o_upper_intermediate)
             assert o_upper_intermediate == o_upper, "Error calculating upper output"
 
-            timestep = np.uint32(args[6])
-            assert timestep == args[6], "Timestep is not uint32"
+            timestep = np.uint32(args[7])
+            assert timestep == args[7], "Timestep is not uint32"
 
             kp_hi, kp_lo = uint_to_bytes(kp, 2)
             ki_hi, ki_lo = uint_to_bytes(ki, 2)
@@ -430,6 +433,7 @@ class FluidController(Microcontroller):
 
             tstep_3, tstep_2, tstep_1, tstep_0 = uint_to_bytes(timestep, 4)
 
+            command_array.append(loop_type)
             command_array.append(kp_hi)
             command_array.append(kp_lo)
             command_array.append(ki_hi)
@@ -502,6 +506,41 @@ class FluidController(Microcontroller):
             command_array.append(idx)
             command_array.append(target)
             pass
+        elif command ==  CMD_SET.BEGIN_CLOSED_LOOP:
+            # Begin one of the control loops. We need the type of loop to begin
+            assert len(args) == 1, "Need loop type"
+            loop_type = np.uint8(args[0])
+            assert loop_type in MCU_CONSTANTS.LOOP_TYPES, "loop type not valid"
+            
+            command_array.append(loop_type)
+            pass
+        elif command == CMD_SET.STOP_CLOSED_LOOP:
+            # Need no additional info
+            pass
+        elif command == CMD_SET.CLEAR_LINES:
+            # Need open loop disc pump power, debounce time (ms), and timeout time(ms)
+            assert len(args) == 3, "Need power, debounce time, and timeout time"
+
+            o_power_intermediate = int((args[0]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
+            o_power = np.uint16(o_power_intermediate)
+            assert o_power_intermediate == o_power, "Error calculating open loop power"
+            
+            t_debounce = np.uint16(args[1])
+            assert t_debounce == args[1], "debounce time is not uint16"
+
+            t_timeout = np.uint16(args[2])
+            assert t_timeout == args[2], "timeout time is not uint16"
+
+            pwr_hi, pwr_lo = uint_to_bytes(o_power, 2)
+            db_hi, db_lo = uint_to_bytes(t_debounce, 2)
+            tt_hi,tt_lo = uint_to_bytes(t_timeout, 2)
+            command_array.append(db_hi)
+            command_array.append(db_lo)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
+            command_array.append(pwr_hi)
+            command_array.append(pwr_lo)
+
         else:
             # If we don't recognize the command, raise an error
             raise Exception("Command not recognized")
