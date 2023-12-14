@@ -340,9 +340,11 @@ class FluidController(Microcontroller):
             pass
         elif command == CMD_SET.INITIALIZE_BUBBLE_SENSORS:
             # Need no additional info
+            assert len(args) == 0, "Unnecessary arguments present"
             pass
         elif command == CMD_SET.INITIALIZE_VALVES:
             # Need no additional info
+            assert len(args) == 0, "Unnecessary arguments present"
             pass
         elif command == CMD_SET.INITIALIZE_BANG_BANG_PARAMS:
             # Need loop type, low threshold, high threshold, min out, max out, and timestep
@@ -516,6 +518,7 @@ class FluidController(Microcontroller):
             pass
         elif command == CMD_SET.STOP_CLOSED_LOOP:
             # Need no additional info
+            assert len(args) == 0, "Unnecessary arguments present"
             pass
         elif command == CMD_SET.CLEAR_LINES:
             # Need open loop disc pump power, debounce time (ms), and timeout time(ms)
@@ -540,7 +543,92 @@ class FluidController(Microcontroller):
             command_array.append(tt_lo)
             command_array.append(pwr_hi)
             command_array.append(pwr_lo)
+        elif command == CMD_SET.LOAD_FLUID_TO_SENSOR:
+            # Need open loop power and timeout time 
+            assert len(args) == 2, "Need power and timeout time"
 
+            o_power_intermediate = int((args[0]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
+            o_power = np.uint16(o_power_intermediate)
+            assert o_power_intermediate == o_power, "Error calculating open loop power"
+            
+            t_debounce = np.uint16(args[1])
+            assert t_debounce == args[1], "timeout time is not uint16"
+
+            pwr_hi, pwr_lo = uint_to_bytes(o_power, 2)
+            tt_hi,tt_lo = uint_to_bytes(t_timeout, 2)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
+            command_array.append(pwr_hi)
+            command_array.append(pwr_lo)
+            pass
+        elif command == CMD_SET.VOL_INTEGRATE_SETTING:
+            # Set whether to perform volume integration and reset the integrated volume
+            assert len(args) == 2, "Need vol integration setting and reset setting"
+            do_integration = bool(args[0])
+            assert do_integration == args[0], "do_integration setting is not a boolean"
+            reset_volume = bool(args[1])
+            assert reset_volume == args[1], "reset_volume setting is not a boolean" 
+
+            command_array.append(do_integration)
+            command_array.append(reset_volume)
+            pass
+        elif command == CMD_SET.LOAD_FLUID_VOLUME:
+            # Need control type, setpoint (ignore if control type is BB), timeout time in ms, and volume to load
+            loop_type = np.uint8(args[0])
+            assert loop_type == args[0], "Loop type must be uint8"
+            if loop_type == MCU_CONSTANTS.FLUID_IN_BANG_BANG:
+                assert len(args) == 3, "Need control type, timeout time, and volume target"
+                i_shift = 1
+            else:
+                assert len(args) == 4, "Need control type, setpoint, timeout time, and volume target"
+                i_shift = 0
+            
+            assert loop_type in [MCU_CONSTANTS.OPEN_LOOP_CTRL, MCU_CONSTANTS.FLUID_IN_BANG_BANG, MCU_CONSTANTS.VACUUM_PID], "Control type must be open loop, fluid in BB, or vacuum BB"
+            
+            t_timeout = np.uint16(args[2-i_shift])
+            assert t_timeout == args[2-i_shift], "timeout time is not uint16"
+
+            volume_intermediate = int((args[3-i_shift]/MCU_CONSTANTS.VOLUME_UL_MAX) * np.iinfo(np.uint16).max)
+            volume = np.uint16(volume_intermediate)
+            assert volume_intermediate == volume, "Error calculating volume"
+
+            # Setpoint is either a pressure or disc pump power depending on loop type
+            setpoint = 0
+            if loop_type == MCU_CONSTANTS.OPEN_LOOP_CTRL:
+                setpoint_intermediate = int((args[1]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
+                setpoint = np.uint16(setpoint_intermediate)
+            elif loop_type == MCU_CONSTANTS.VACUUM_PID:
+                setpoint_intermediate = int((abs(args[1])/abs(MCU_CONSTANTS._p_min)) * np.iinfo(np.uint16).max)
+                setpoint = np.uint16(setpoint_intermediate)
+            
+            # 1 for setting the control type, 2 for setpoint (if applicable), 2 for timeout, 2 for volume setpoint
+            sp_hi, sp_lo = uint_to_bytes(setpoint, 2)
+            tt_hi, tt_lo = uint_to_bytes(t_timeout, 2)
+            vol_hi, vol_lo = uint_to_bytes(volume, 2)
+            command_array.append(loop_type)
+            command_array.append(sp_hi)
+            command_array.append(sp_lo)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
+            command_array.append(vol_hi)
+            command_array.append(vol_lo)
+            pass
+        elif command == CMD_SET.VENT_VB0:
+            # 3 bytes for cmd and UID, 1 for vacuum threshold, 2 for timeout
+            assert len(args) == 2, "Need vacuum threshold and timeout time"
+
+            vacuum_intermediate = int(abs(args[0]/MCU_CONSTANTS._p_min) * np.iinfo(np.uint8).max)
+            vacuum = np.uint8(vacuum_intermediate)
+            assert vacuum_intermediate == vacuum, "Error calculating vacuum setting"
+
+            t_timeout = np.uint16(args[1])
+            assert t_timeout == args[1], "timeout time is not uint16"
+
+            tt_hi, tt_lo = uint_to_bytes(t_timeout, 2)
+            command_array.append(vacuum)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
+            pass
         else:
             # If we don't recognize the command, raise an error
             raise Exception("Command not recognized")
