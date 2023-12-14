@@ -1,9 +1,7 @@
-from controller import Microcontroller
 from controller import FluidController
 from _def import CMD_SET, MCU_CONSTANTS
 from controller import SERIAL_NUMBER_DEBUGGING
 import time
-import numpy as np
 
 fc = FluidController(SERIAL_NUMBER_DEBUGGING, debug=True)
 fc.begin()

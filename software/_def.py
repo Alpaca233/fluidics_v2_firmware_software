@@ -61,3 +61,4 @@ class CMD_SET:
   UNLOAD_FLUID_VOLUME          = 18
   VENT_VB0                     = 19
   VOL_INTEGRATE_SETTING        = 20
+  REMOVE_ALL_MEDIUM            = 21

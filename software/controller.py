@@ -520,7 +520,7 @@ class FluidController(Microcontroller):
             # Need no additional info
             assert len(args) == 0, "Unnecessary arguments present"
             pass
-        elif command == CMD_SET.CLEAR_LINES:
+        elif (command == CMD_SET.CLEAR_LINES) or (command == CMD_SET.REMOVE_ALL_MEDIUM):
             # Need open loop disc pump power, debounce time (ms), and timeout time(ms)
             assert len(args) == 3, "Need power, debounce time, and timeout time"
 
