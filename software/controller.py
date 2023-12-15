@@ -36,7 +36,7 @@ def uint_to_bytes(uint, n_bytes):
 
 # Define basic input/output from the microcontroller
 class Microcontroller():
-    def __init__(self, serial_number, use_cobs = True):
+    def __init__(self, serial_number, use_cobs = True, cmd_len = MCU_CMD_LENGTH, buffer_len = MCU_MSG_LENGTH):
         '''
         Arguments:
             string serial_number: serial number of target microcontroller
@@ -47,8 +47,8 @@ class Microcontroller():
         self.use_cobs = use_cobs
 
         # Parameters for fixed-length messages 
-        self.tx_buffer_length = MCU_CMD_LENGTH
-        self.rx_buffer_length = MCU_MSG_LENGTH
+        self.tx_buffer_length = cmd_len
+        self.rx_buffer_length = buffer_len
 
         self.read_buffer = []
         return
@@ -90,7 +90,7 @@ class Microcontroller():
         self.serial.write(cmd)
         return
     
-    def read_received_packet_nowait(self):
+    def read_received_packet_nowait(self, discard_buffer=False):
         '''
         If there is serial data available, return it as an array of bytes.
         If we are using COBS, decode it first
@@ -103,6 +103,17 @@ class Microcontroller():
         '''
         if self.serial.in_waiting == 0:
             return None
+        # If we want to get only the latest data, read and discard data until the buffer is the right length
+        byte_in = None
+        if discard_buffer:
+            self.read_buffer = []
+            while self.serial.in_waiting > (2 * self.rx_buffer_length):
+                byte_in = ord(self.serial.read())
+            if self.serial.in_waiting > self.rx_buffer_length:
+                if (self.use_cobs) and (byte_in is not None):
+                    while byte_in != 0:
+                        byte_in = ord(self.serial.read())
+
         if self.use_cobs:
             # Read data into read_buffer until we hit an end-of-packet (0x00)
             while self.serial.in_waiting:
@@ -153,7 +164,8 @@ class FluidController(Microcontroller):
 
         if(self.log_measurements):
             self.measurement_file = open(os.path.join(Path.home(),"Downloads","Fluidic Controller Logged Measurement_" + datetime.now().strftime('%Y-%m-%d %H-%M-%S.%f') + ".csv"), "w+")
-            self.counter_measurement_file_flush = 0
+            self.measurement_file.write("timestamp,rx_uid,rx_cmd,cmd_status,mcu_state,bs1,bs2,mcu_time,sv0,sv1,sv2,sv3,sv4,valves,pump,p0,p1,p2,p3,f1,f2,vol_uL\n")
+            self.counter_measurement_file_flush = 1
 
         self.cmd_uid = 0
         self.cmd_sent = CMD_SET.CLEAR
@@ -164,6 +176,8 @@ class FluidController(Microcontroller):
         self.serial_number = serial_number
         self.use_cobs = use_cobs
 
+        super().__init__(self.serial_number, self.use_cobs)
+
         return
 
     def __del__(self):
@@ -171,6 +185,11 @@ class FluidController(Microcontroller):
         if self.log_measurements:
             self.measurement_file.close()
         return
+    
+    def wait_for_completion(self):
+        status = self.get_mcu_status()
+        while (status == COMMAND_STATUS.IN_PROGRESS) or (status is None):
+            status = self.get_mcu_status()
     
     def add_uid_to_cmd(self, cmd):
         '''Break cmd_uid into two bytes and overwrite the first two bytes of the command array with the uid'''
@@ -182,7 +201,7 @@ class FluidController(Microcontroller):
         '''
         Read a fixed-length packet from the microcontroller. If there is data available, unpack it. If in debug mode, print out the data. If we are aving logs, write to disc
         '''
-        msg = self.read_received_packet_nowait()
+        msg = self.read_received_packet_nowait(discard_buffer=True)
         if msg is None:
             return None
         assert (len(msg) == MCU_MSG_LENGTH), f"Expected message of len {MCU_CMD_LENGTH}, got len {len(msg)}"
@@ -209,6 +228,8 @@ class FluidController(Microcontroller):
         byte 28-29  : total volume (ul), range: 0 - 5000
 
         '''
+        if self.debug:
+            print(str(list(msg)))
 
         MCU_received_command_UID = (msg[0] << 8) + msg[1] 
         MCU_received_command = msg[2]
@@ -225,48 +246,52 @@ class FluidController(Microcontroller):
 
         solenoid_valves = np.int16((int(msg[11])<<8) + msg[12])
 
-        measurement_pump_power = float((int(msg[13])<<8)+msg[14])/0xFFFF
+        measurement_pump_power = float((int(msg[13])<<8)+msg[14])/np.iinfo(np.uint16).max
 
         _pressure_1_raw = (int(msg[15])<<8) + msg[16]
         _pressure_2_raw = (int(msg[17])<<8) + msg[18]
         _pressure_3_raw = (int(msg[19])<<8) + msg[20]
         _pressure_4_raw = (int(msg[21])<<8) + msg[22]
-        pressure_1 = (_pressure_1_raw - MCU_CONSTANTS._output_min) * (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min) / (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) + MCU_CONSTANTS._p_min
-        pressure_2 = (_pressure_2_raw - MCU_CONSTANTS._output_min) * (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min) / (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) + MCU_CONSTANTS._p_min
-        pressure_3 = (_pressure_3_raw - MCU_CONSTANTS._output_min) * (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min) / (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) + MCU_CONSTANTS._p_min
-        pressure_4 = (_pressure_4_raw - MCU_CONSTANTS._output_min) * (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min) / (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) + MCU_CONSTANTS._p_min
         
-        flow_1 = float(np.int16((int(msg[23])<<8)+msg[24]))/MCU_CONSTANTS.SCALE_FACTOR_FLOW
-        flow_2 = float(np.int16((int(msg[25])<<8)+msg[26]))/MCU_CONSTANTS.SCALE_FACTOR_FLOW
+        def raw_to_psi(raw_pressure):
+            return (raw_pressure - MCU_CONSTANTS._output_min) * (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min) / (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) + MCU_CONSTANTS._p_min
+        
+        pressure_1 = raw_to_psi(_pressure_1_raw)
+        pressure_2 = raw_to_psi(_pressure_2_raw)
+        pressure_3 = raw_to_psi(_pressure_3_raw)
+        pressure_4 = raw_to_psi(_pressure_4_raw)
+        
+        flow_1 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[23])<<8)+msg[24]))/np.iinfo(np.uint16).max
+        flow_2 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[25])<<8)+msg[26]))/np.iinfo(np.uint16).max
 
         MCU_CMD_time_elapsed = msg[27]
 
-        vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/0xFFFF)*MCU_CONSTANTS.VOLUME_UL_MAX
+        vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/np.iinfo(np.uint16).max)*MCU_CONSTANTS.VOLUME_UL_MAX
 
         # Write the data to file
         if self.log_measurements or self.debug:
-            line = f"""{datetime.now().strftime('%m/%d %H:%M:%S')}, \
-                       {MCU_received_command_UID}, \
-                       {MCU_received_command}, \
-                       {MCU_command_execution_status}, \
-                       {MCU_interal_program}, \
-                       {bubble_sensor_1_state}, \
-                       {bubble_sensor_2_state}, \
-                       {MCU_CMD_time_elapsed}, \
-                       {selector_valve_1_pos}, \
-                       {selector_valve_2_pos}, \
-                       {selector_valve_3_pos}, \
-                       {selector_valve_4_pos}, \
-                       {selector_valve_5_pos}, \
-                       {solenoid_valves:>016b}, \
-                       {measurement_pump_power:.2f}, \
-                       {pressure_1:.2f}, \
-                       {pressure_2:.2f}, \
-                       {pressure_3:.2f}, \
-                       {pressure_4:.2f}, \
-                       {flow_1:.2f}, \
-                       {flow_2:.2f}, \
-                       {vol_ul:.2f}\n"""
+            line = (f"{datetime.now().strftime('%m/%d %H:%M:%S')},"
+                    f"{MCU_received_command_UID},"
+                    f"{MCU_received_command},"
+                    f"{MCU_command_execution_status},"
+                    f"{MCU_interal_program},"
+                    f"{bubble_sensor_1_state},"
+                    f"{bubble_sensor_2_state},"
+                    f"{MCU_CMD_time_elapsed},"
+                    f"{selector_valve_1_pos},"
+                    f"{selector_valve_2_pos},"
+                    f"{selector_valve_3_pos},"
+                    f"{selector_valve_4_pos},"
+                    f"{selector_valve_5_pos},"
+                    f"{solenoid_valves:>016b},"
+                    f"{measurement_pump_power:.2f},"
+                    f"{pressure_1:.2f},"
+                    f"{pressure_2:.2f},"
+                    f"{pressure_3:.2f},"
+                    f"{pressure_4:.2f},"
+                    f"{flow_1:.2f},"
+                    f"{flow_2:.2f},"
+                    f"{vol_ul:.2f}\n")
             if self.log_measurements:
                 self.measurement_file.write(line)
                 self.counter_measurement_file_flush += 1
@@ -274,7 +299,8 @@ class FluidController(Microcontroller):
                     self.counter_measurement_file_flush = 0
                     self.measurement_file.flush()
             if self.debug:
-                print(line)
+                # print(line)
+                pass
 
         # Check for mismatch between received command and transmitted command
         if (MCU_received_command != self.cmd_sent) or (MCU_received_command_UID != self.cmd_uid):
@@ -283,6 +309,8 @@ class FluidController(Microcontroller):
             else:
                 dt = time() - self.timestamp_last_mismatch
                 assert (dt < T_DIFF_COMPUTER_MCU_MISMATCH_FAULT_THRESHOLD_SECONDS), f"Command mismatch for {dt} seconds"
+                print((MCU_received_command, self.cmd_sent))
+                print((MCU_received_command_UID, self.cmd_uid))
         else:
             self.timestamp_last_mismatch = None
 
@@ -295,12 +323,11 @@ class FluidController(Microcontroller):
         Parameters are formatted differently depending on the command
         '''
         command_array = [0, 0] # Initialize with two empty cells for UID
-        self.add_uid_to_cmd(command_array)
         self.cmd_uid += 1
 
-        command_target = np.uint8(command)
-        assert command_target == command, "Command is not uint8"
-        command_array.append(command_target)
+        self.cmd_sent = np.uint8(command)
+        assert self.cmd_sent == command, "Command is not uint8"
+        command_array.append(self.cmd_sent)
 
         if command == CMD_SET.CLEAR:
             self.cmd_uid = 0
@@ -633,4 +660,19 @@ class FluidController(Microcontroller):
             # If we don't recognize the command, raise an error
             raise Exception("Command not recognized")
 
+        self.add_uid_to_cmd(command_array)
         self.send_mcu_command(command_array)
+        pass
+
+    def send_command_blocking(self, command, *args):
+        '''Send a command, then write logs while waiting for it to complete'''
+        self.send_command(command, *args)
+        self.wait_for_completion()
+        pass
+
+    def delay(self, dt):
+        '''Keep logging data for time t'''
+        tf = time() + dt
+        while time() <= tf:
+            self.get_mcu_status()
+        pass

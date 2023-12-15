@@ -7,37 +7,37 @@ MCU_MSG_LENGTH = 30
 T_DIFF_COMPUTER_MCU_MISMATCH_FAULT_THRESHOLD_SECONDS = 3
 
 class MCU_CONSTANTS:
-    # pressure sensor SSCMRRV015PD2A3
-    _output_min = 1638; # 10% of 2^14
-    _output_max = 14745; # 90% of 2^14
-    _p_min = -15; # psi
-    _p_max = 15; # psi
-    # SLF3X params
-    VOLUME_UL_MAX = 5000
-    SCALE_FACTOR_FLOW = 10 # Scale Factor for flow rate measurement, ul/min, SLF3S-0600F
-    SLF3X_MAX_VAL_uL_MIN = 3520
-    SLF3X_WATER = 0x08
-    SLF3X_IPA = 0x15
-    MEDIUM_WATER = 0x08
-    MEDIUM_IPA = 0x15
-    MEDIA = [MEDIUM_IPA, MEDIUM_WATER]
-    # PID params
-    KP_MAX =  128
-    KI_MAX =  128
-    KD_MAX =  128
-    ILIM_MAX = np.iinfo(np.uint32).max
-    # Disc pump params
-    TTP_MAX_PW = 1000
-    # Control loop params
-    FLUID_OUT_BANG_BANG = 0
-    FLUID_IN_BANG_BANG  = 1
-    FLUID_OUT_PID       = 2
-    PRESSURE_PID        = 3
-    VACUUM_PID          = 4
-    OPEN_LOOP_CTRL      = 5
-    LOOP_TYPES          = [FLUID_OUT_BANG_BANG, FLUID_IN_BANG_BANG, FLUID_OUT_PID, PRESSURE_PID, VACUUM_PID, OPEN_LOOP_CTRL]
-    BB_LOOP_TYPES       = [FLUID_OUT_BANG_BANG, FLUID_IN_BANG_BANG]
-    PID_LOOP_TYPES      = [FLUID_OUT_PID, PRESSURE_PID, VACUUM_PID]
+  # pressure sensor SSCMRRV015PD2A3
+  _output_min = 1638; # 10% of 2^14
+  _output_max = 14745; # 90% of 2^14
+  _p_min = -15; # psi
+  _p_max = 15; # psi
+  # SLF3X params
+  VOLUME_UL_MAX = 5000
+  SCALE_FACTOR_FLOW = 10 # Scale Factor for flow rate measurement, ul/min, SLF3S-0600F
+  SLF3X_MAX_VAL_uL_MIN = 3520
+  SLF3X_WATER = 0x08
+  SLF3X_IPA = 0x15
+  MEDIUM_WATER = 0x08
+  MEDIUM_IPA = 0x15
+  MEDIA = [MEDIUM_IPA, MEDIUM_WATER]
+  # PID params
+  KP_MAX =  128
+  KI_MAX =  128
+  KD_MAX =  128
+  ILIM_MAX = np.iinfo(np.uint32).max
+  # Disc pump params
+  TTP_MAX_PW = 1000
+  # Control loop params
+  FLUID_OUT_BANG_BANG = 0
+  FLUID_IN_BANG_BANG  = 1
+  FLUID_OUT_PID       = 2
+  PRESSURE_PID        = 3
+  VACUUM_PID          = 4
+  OPEN_LOOP_CTRL      = 5
+  LOOP_TYPES          = [FLUID_OUT_BANG_BANG, FLUID_IN_BANG_BANG, FLUID_OUT_PID, PRESSURE_PID, VACUUM_PID, OPEN_LOOP_CTRL]
+  BB_LOOP_TYPES       = [FLUID_OUT_BANG_BANG, FLUID_IN_BANG_BANG]
+  PID_LOOP_TYPES      = [FLUID_OUT_PID, PRESSURE_PID, VACUUM_PID]
 
 class CMD_SET:
   CLEAR                        = 0
@@ -62,3 +62,17 @@ class CMD_SET:
   VENT_VB0                     = 19
   VOL_INTEGRATE_SETTING        = 20
   REMOVE_ALL_MEDIUM            = 21
+
+class COMMAND_STATUS:
+  COMPLETED_WITHOUT_ERRORS  = 0
+  IN_PROGRESS               = 1
+  CMD_INVALID               = 2
+  CMD_EXECUTION_ERROR       = 3
+
+class VALVE_POSITIONS:
+  FLUID_TO_CHAMBER   = 0b0000000000000000
+  FLUID_CLEAR_LINES  = 0b0000000000010111  
+  FLUID_TO_RESERVOIR = 0b0000000000010111
+  FLUID_STOP_FLOW    = 0b0000000000010101
+  VALVES_VENT_VB0    = 0b0000000000110101
+  FLUID_TO_VB1       = 0b0000000000011000
