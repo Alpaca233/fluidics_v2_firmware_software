@@ -271,7 +271,7 @@ class FluidController(Microcontroller):
         flow_2 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[25])<<8)+msg[26]))/np.iinfo(np.uint16).max
         MCU_CMD_time_elapsed = msg[27]
 
-        vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/np.iinfo(np.uint16).max)*MCU_CONSTANTS.VOLUME_UL_MAX
+        vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/np.iinfo(np.int16).max)*MCU_CONSTANTS.VOLUME_UL_MAX
 
         # Write the data to file
         if self.log_measurements or self.debug:
