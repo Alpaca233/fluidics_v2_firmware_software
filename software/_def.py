@@ -8,10 +8,10 @@ T_DIFF_COMPUTER_MCU_MISMATCH_FAULT_THRESHOLD_SECONDS = 3
 
 class MCU_CONSTANTS:
   # pressure sensor SSCMRRV015PD2A3
-  _output_min = 1638; # 10% of 2^14
-  _output_max = 14745; # 90% of 2^14
-  _p_min = -15; # psi
-  _p_max = 15; # psi
+  _output_min = 0 #1638; # 10% of 2^14
+  _output_max = (1<<14) - 1 #14745; # 90% of 2^14
+  _p_min = -15 # psi
+  _p_max = 15 # psi
   # SLF3X params
   VOLUME_UL_MAX = 5000
   SCALE_FACTOR_FLOW = 10 # Scale Factor for flow rate measurement, ul/min, SLF3S-0600F
@@ -62,6 +62,7 @@ class CMD_SET:
   VENT_VB0                     = 19
   VOL_INTEGRATE_SETTING        = 20
   REMOVE_ALL_MEDIUM            = 21
+  DELAY_MS                     = 22
 
 class COMMAND_STATUS:
   COMPLETED_WITHOUT_ERRORS  = 0
@@ -76,3 +77,5 @@ class VALVE_POSITIONS:
   FLUID_STOP_FLOW    = 0b0000000000010101
   VALVES_VENT_VB0    = 0b0000000000110101
   FLUID_TO_VB1       = 0b0000000000011000
+  TEST_PRESSURE      = 0b0000000000001010
+  TEST_VACUUM        = 0b0000000000010001

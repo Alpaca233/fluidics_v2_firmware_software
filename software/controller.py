@@ -170,26 +170,32 @@ class FluidController(Microcontroller):
         self.cmd_uid = 0
         self.cmd_sent = CMD_SET.CLEAR
         self.timestamp_last_mismatch = None
-        self.mcu_state = None
         self.debug = debug
 
         self.serial_number = serial_number
         self.use_cobs = use_cobs
+
+        self.recorded_data = {}
 
         super().__init__(self.serial_number, self.use_cobs)
 
         return
 
     def __del__(self):
-        '''Close the logfile if it's being used'''
+        '''Close the logfile if it's being used, reset, and disconnect'''
         if self.log_measurements:
             self.measurement_file.close()
+        if self.serial is not None:
+            self.serial.close()
         return
     
     def wait_for_completion(self):
+        '''Keep polling for status until it is no longer IN_PROGRESS, return the status'''
         status = self.get_mcu_status()
         while (status == COMMAND_STATUS.IN_PROGRESS) or (status is None):
             status = self.get_mcu_status()
+        
+        return status
     
     def add_uid_to_cmd(self, cmd):
         '''Break cmd_uid into two bytes and overwrite the first two bytes of the command array with the uid'''
@@ -246,7 +252,7 @@ class FluidController(Microcontroller):
 
         solenoid_valves = np.int16((int(msg[11])<<8) + msg[12])
 
-        measurement_pump_power = float((int(msg[13])<<8)+msg[14])/np.iinfo(np.uint16).max
+        measurement_pump_power = MCU_CONSTANTS.TTP_MAX_PW * float((int(msg[13])<<8)+msg[14])/np.iinfo(np.uint16).max
 
         _pressure_1_raw = (int(msg[15])<<8) + msg[16]
         _pressure_2_raw = (int(msg[17])<<8) + msg[18]
@@ -255,7 +261,7 @@ class FluidController(Microcontroller):
         
         def raw_to_psi(raw_pressure):
             return (raw_pressure - MCU_CONSTANTS._output_min) * (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min) / (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) + MCU_CONSTANTS._p_min
-        
+
         pressure_1 = raw_to_psi(_pressure_1_raw)
         pressure_2 = raw_to_psi(_pressure_2_raw)
         pressure_3 = raw_to_psi(_pressure_3_raw)
@@ -263,7 +269,6 @@ class FluidController(Microcontroller):
         
         flow_1 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[23])<<8)+msg[24]))/np.iinfo(np.uint16).max
         flow_2 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[25])<<8)+msg[26]))/np.iinfo(np.uint16).max
-
         MCU_CMD_time_elapsed = msg[27]
 
         vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/np.iinfo(np.uint16).max)*MCU_CONSTANTS.VOLUME_UL_MAX
@@ -275,8 +280,8 @@ class FluidController(Microcontroller):
                     f"{MCU_received_command},"
                     f"{MCU_command_execution_status},"
                     f"{MCU_interal_program},"
-                    f"{bubble_sensor_1_state},"
-                    f"{bubble_sensor_2_state},"
+                    f"{bubble_sensor_1_state:>04b},"
+                    f"{bubble_sensor_2_state:>04b},"
                     f"{MCU_CMD_time_elapsed},"
                     f"{selector_valve_1_pos},"
                     f"{selector_valve_2_pos},"
@@ -299,7 +304,7 @@ class FluidController(Microcontroller):
                     self.counter_measurement_file_flush = 0
                     self.measurement_file.flush()
             if self.debug:
-                # print(line)
+                print(line)
                 pass
 
         # Check for mismatch between received command and transmitted command
@@ -314,7 +319,22 @@ class FluidController(Microcontroller):
         else:
             self.timestamp_last_mismatch = None
 
-        self.mcu_state = ()
+        # Load latest data into a shared dict
+        self.recorded_data = {
+            "MCU_received_command_UID": MCU_received_command_UID,
+            "MCU_received_command": MCU_received_command,
+            "MCU_command_execution_status": MCU_command_execution_status,
+            "MCU_interal_program": MCU_interal_program,
+            "bubble_sensor_states": [bubble_sensor_1_state, bubble_sensor_2_state],
+            "MCU_CMD_time_elapsed": MCU_CMD_time_elapsed,
+            "selector_valves_pos": [selector_valve_1_pos, selector_valve_2_pos, selector_valve_3_pos, selector_valve_4_pos, selector_valve_5_pos],
+            "solenoid_valves": solenoid_valves,
+            "measurement_pump_power": measurement_pump_power,
+            "pressures": [pressure_1, pressure_2, pressure_3, pressure_4],
+            "flowrates": [flow_1, flow_2],
+            "vol_ul": vol_ul
+        }
+
         return MCU_command_execution_status
     
     def send_command(self, command, *args):
@@ -387,12 +407,10 @@ class FluidController(Microcontroller):
             t_upper = np.uint16(t_upper_intermediate)
             assert t_upper_intermediate == t_upper, "Error calculating upper bound"
 
-            o_lower_intermediate = int((args[3]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            o_lower = np.uint16(o_lower_intermediate)
-            assert o_lower_intermediate == o_lower, "Error calculating lower output"
-            o_upper_intermediate = int((args[4]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            o_upper = np.uint16(o_upper_intermediate)
-            assert o_upper_intermediate == o_upper, "Error calculating upper output"
+            o_lower = np.uint16(args[3])
+            assert args[3] == o_lower, "Lower output not uint16"
+            o_upper = np.uint16(args[4])
+            assert args[4] == o_upper, "Upper output not uint16"
 
             timestep = np.uint32(args[5])
             assert timestep == args[5], "Timestep is not uint32"
@@ -443,12 +461,10 @@ class FluidController(Microcontroller):
             assert ilim_intermediate == ilim, "Error calculating integral winding limit"
             
 
-            o_lower_intermediate = int((args[5]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            o_lower = np.uint16(o_lower_intermediate)
-            assert o_lower_intermediate == o_lower, "Error calculating lower output"
-            o_upper_intermediate = int((args[6]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            o_upper = np.uint16(o_upper_intermediate)
-            assert o_upper_intermediate == o_upper, "Error calculating upper output"
+            o_lower = np.uint16(args[3])
+            assert args[3] == o_lower, "Lower output not uint16"
+            o_upper = np.uint16(args[4])
+            assert args[4] == o_upper, "Upper output not uint16"
 
             timestep = np.uint32(args[7])
             assert timestep == args[7], "Timestep is not uint32"
@@ -504,11 +520,8 @@ class FluidController(Microcontroller):
         elif command == CMD_SET.SET_PUMP_PWR_OPEN_LOOP:
             # To set the pump power, we just need the power
             assert len(args) == 1, "Need power (milliwatts)"
-
-            pwr_intermediate = np.uint16((args[0]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            pwr = np.uint16(pwr_intermediate)
-            assert pwr_intermediate == pwr, "Error calculating power setting"
-
+            pwr = np.uint16(args[0])
+            assert pwr == args[0], "power is not uint16"
             pwr_hi, pwr_lo = uint_to_bytes(pwr, 2)
             command_array.append(pwr_hi)
             command_array.append(pwr_lo)
@@ -551,9 +564,8 @@ class FluidController(Microcontroller):
             # Need open loop disc pump power, debounce time (ms), and timeout time(ms)
             assert len(args) == 3, "Need power, debounce time, and timeout time"
 
-            o_power_intermediate = int((args[0]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            o_power = np.uint16(o_power_intermediate)
-            assert o_power_intermediate == o_power, "Error calculating open loop power"
+            o_power = np.uint16(args[0])
+            assert args[0] == o_power, "Open loop power not uint16"
             
             t_debounce = np.uint16(args[1])
             assert t_debounce == args[1], "debounce time is not uint16"
@@ -564,29 +576,28 @@ class FluidController(Microcontroller):
             pwr_hi, pwr_lo = uint_to_bytes(o_power, 2)
             db_hi, db_lo = uint_to_bytes(t_debounce, 2)
             tt_hi,tt_lo = uint_to_bytes(t_timeout, 2)
-            command_array.append(db_hi)
-            command_array.append(db_lo)
-            command_array.append(tt_hi)
-            command_array.append(tt_lo)
             command_array.append(pwr_hi)
             command_array.append(pwr_lo)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
+            command_array.append(db_hi)
+            command_array.append(db_lo)
+            
         elif command == CMD_SET.LOAD_FLUID_TO_SENSOR:
             # Need open loop power and timeout time 
             assert len(args) == 2, "Need power and timeout time"
 
-            o_power_intermediate = int((args[0]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-            o_power = np.uint16(o_power_intermediate)
-            assert o_power_intermediate == o_power, "Error calculating open loop power"
-            
-            t_debounce = np.uint16(args[1])
-            assert t_debounce == args[1], "timeout time is not uint16"
+            pwr = np.uint16(args[0])
+            assert pwr == args[0], "power is not uint16"
+            t_timeout = np.uint16(args[1])
+            assert t_timeout == args[1], "timeout time is not uint16"
 
-            pwr_hi, pwr_lo = uint_to_bytes(o_power, 2)
+            pwr_hi, pwr_lo = uint_to_bytes(pwr, 2)
             tt_hi,tt_lo = uint_to_bytes(t_timeout, 2)
-            command_array.append(tt_hi)
-            command_array.append(tt_lo)
             command_array.append(pwr_hi)
             command_array.append(pwr_lo)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
             pass
         elif command == CMD_SET.VOL_INTEGRATE_SETTING:
             # Set whether to perform volume integration and reset the integrated volume
@@ -622,11 +633,12 @@ class FluidController(Microcontroller):
             # Setpoint is either a pressure or disc pump power depending on loop type
             setpoint = 0
             if loop_type == MCU_CONSTANTS.OPEN_LOOP_CTRL:
-                setpoint_intermediate = int((args[1]/MCU_CONSTANTS.TTP_MAX_PW) * np.iinfo(np.uint16).max)
-                setpoint = np.uint16(setpoint_intermediate)
+                setpoint = np.uint16(args[1])
+                assert setpoint == args[1], "power not uint16"
             elif loop_type == MCU_CONSTANTS.VACUUM_PID:
                 setpoint_intermediate = int((abs(args[1])/abs(MCU_CONSTANTS._p_min)) * np.iinfo(np.uint16).max)
                 setpoint = np.uint16(setpoint_intermediate)
+                assert setpoint == setpoint_intermediate, "Error calculating pressure setpoint"
             
             # 1 for setting the control type, 2 for setpoint (if applicable), 2 for timeout, 2 for volume setpoint
             sp_hi, sp_lo = uint_to_bytes(setpoint, 2)
@@ -641,21 +653,33 @@ class FluidController(Microcontroller):
             command_array.append(vol_lo)
             pass
         elif command == CMD_SET.VENT_VB0:
-            # 3 bytes for cmd and UID, 1 for vacuum threshold, 2 for timeout
+            # 3 bytes for cmd and UID, 2 for vacuum threshold, 2 for timeout
             assert len(args) == 2, "Need vacuum threshold and timeout time"
 
-            vacuum_intermediate = int(abs(args[0]/MCU_CONSTANTS._p_min) * np.iinfo(np.uint8).max)
-            vacuum = np.uint8(vacuum_intermediate)
+            vacuum_intermediate = int(MCU_CONSTANTS._output_min + (args[0] - MCU_CONSTANTS._p_min) * (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) / (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min))
+            vacuum = np.uint16(vacuum_intermediate)
             assert vacuum_intermediate == vacuum, "Error calculating vacuum setting"
-
             t_timeout = np.uint16(args[1])
             assert t_timeout == args[1], "timeout time is not uint16"
 
             tt_hi, tt_lo = uint_to_bytes(t_timeout, 2)
-            command_array.append(vacuum)
+            v_hi, v_lo = uint_to_bytes(vacuum, 2)
+            command_array.append(v_hi)
+            command_array.append(v_lo)
             command_array.append(tt_hi)
             command_array.append(tt_lo)
             pass
+        elif command == CMD_SET.DELAY_MS:
+            # Do nothing for set time
+            assert len(args) == 1, "Need delay time"
+            delaytime = np.uint32(args[0])
+            assert delaytime == args[0], "delay time is not uint32"
+
+            dt_3, dt_2, dt_1, dt_0 = uint_to_bytes(delaytime, 4)
+            command_array.append(dt_3)
+            command_array.append(dt_2)
+            command_array.append(dt_1)
+            command_array.append(dt_0)
         else:
             # If we don't recognize the command, raise an error
             raise Exception("Command not recognized")
@@ -667,8 +691,7 @@ class FluidController(Microcontroller):
     def send_command_blocking(self, command, *args):
         '''Send a command, then write logs while waiting for it to complete'''
         self.send_command(command, *args)
-        self.wait_for_completion()
-        pass
+        return self.wait_for_completion()
 
     def delay(self, dt):
         '''Keep logging data for time t'''
