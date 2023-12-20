@@ -42,25 +42,39 @@ def pressure_vacuum_test(fc):
     return
 
 initialize_device(fc)
+# Flush with water
+fc.send_command_blocking(CMD_SET.SET_ROTARY_VALVE, 0, 1)
+fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((9/9) * MCU_CONSTANTS.TTP_MAX_PW), 3000, 3000)
+
 # OPEN LOOP FLUID WITHDRAWAL
 fc.send_command_blocking(CMD_SET.SET_ROTARY_VALVE, 0, 2)
 print("Clearing lines")
-fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((1/2) * MCU_CONSTANTS.TTP_MAX_PW), 3000, 35000)
+fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((1/5) * MCU_CONSTANTS.TTP_MAX_PW), 4000, 35000)
 fc.send_command_blocking(CMD_SET.SET_SOLENOID_VALVES, VALVE_POSITIONS.FLUID_STOP_FLOW)
 print("Venting vacuum bottle")
 fc.send_command_blocking(CMD_SET.VENT_VB0, -0.1, 20001)
 print("Starting load")
 fc.send_command_blocking(CMD_SET.SET_ROTARY_VALVE, 0, 1)
-fc.send_command_blocking(CMD_SET.LOAD_FLUID_TO_SENSOR, int((1/6) * MCU_CONSTANTS.TTP_MAX_PW), 30000)
+fc.send_command_blocking(CMD_SET.LOAD_FLUID_TO_SENSOR, int((3/4) * MCU_CONSTANTS.TTP_MAX_PW), 30000)
 print("Vent vacuum bottle")
 fc.send_command_blocking(CMD_SET.VENT_VB0, -0.1, 20001)
-v = 60
+v = 30
 print(f"Load {v} uL of fluid open-loop")
-fc.send_command_blocking(CMD_SET.LOAD_FLUID_VOLUME, MCU_CONSTANTS.OPEN_LOOP_CTRL, int((1/10) * MCU_CONSTANTS.TTP_MAX_PW), 30000, v)
+fc.send_command_blocking(CMD_SET.LOAD_FLUID_VOLUME, MCU_CONSTANTS.OPEN_LOOP_CTRL, int((5/11) * MCU_CONSTANTS.TTP_MAX_PW), 30000, v)
+print("Test retention")
 fc.send_command_blocking(CMD_SET.DELAY_MS, 100)
-
+v = int((3/10) * v)
+print(f"Unload {v} uL of fluid open-loop")
+fc.send_command_blocking(CMD_SET.UNLOAD_FLUID_VOLUME, MCU_CONSTANTS.OPEN_LOOP_CTRL, int((1/30) * MCU_CONSTANTS.TTP_MAX_PW), 30000, v)
+print("Clear extra fluid from the reservoir")
+fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((3/5) * MCU_CONSTANTS.TTP_MAX_PW), 1000, 5000)
+print("Eject fluid into open chamber")
+fc.send_command_blocking(CMD_SET.EJECT_MEDIUM, int((3/7) * MCU_CONSTANTS.TTP_MAX_PW), 500, 10000, 0.9)
+print("Withdraw fluid from open chamber")
+fc.send_command_blocking(CMD_SET.REMOVE_ALL_MEDIUM, int((4/5) * MCU_CONSTANTS.TTP_MAX_PW), 1000, 10000, 0.8)
 # Reset at end
 print("resetting")
 fc.send_command_blocking(CMD_SET.SET_ROTARY_VALVE, 0, 2)
-fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((1/3) * MCU_CONSTANTS.TTP_MAX_PW), 3000, 35000)
+fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((2/3) * MCU_CONSTANTS.TTP_MAX_PW), 1000, 35000)
+fc.send_command_blocking(CMD_SET.VENT_VB0, -0.3, 20001)
 fc.send_command_blocking(CMD_SET.CLEAR)

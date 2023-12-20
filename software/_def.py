@@ -63,6 +63,7 @@ class CMD_SET:
   VOL_INTEGRATE_SETTING        = 20
   REMOVE_ALL_MEDIUM            = 21
   DELAY_MS                     = 22
+  EJECT_MEDIUM                 = 23
 
 class COMMAND_STATUS:
   COMPLETED_WITHOUT_ERRORS  = 0

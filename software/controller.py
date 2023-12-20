@@ -267,8 +267,8 @@ class FluidController(Microcontroller):
         pressure_3 = raw_to_psi(_pressure_3_raw)
         pressure_4 = raw_to_psi(_pressure_4_raw)
         
-        flow_1 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[23])<<8)+msg[24]))/np.iinfo(np.uint16).max
-        flow_2 = MCU_CONSTANTS.SCALE_FACTOR_FLOW * float(np.int16((int(msg[25])<<8)+msg[26]))/np.iinfo(np.uint16).max
+        flow_1 = float(np.int16((int(msg[23])<<8)+msg[24]))/MCU_CONSTANTS.SCALE_FACTOR_FLOW
+        flow_2 = float(np.int16((int(msg[25])<<8)+msg[26]))/MCU_CONSTANTS.SCALE_FACTOR_FLOW
         MCU_CMD_time_elapsed = msg[27]
 
         vol_ul = (float(np.int16((int(msg[28])<<8)+msg[29]))/np.iinfo(np.int16).max)*MCU_CONSTANTS.VOLUME_UL_MAX
@@ -560,7 +560,35 @@ class FluidController(Microcontroller):
             # Need no additional info
             assert len(args) == 0, "Unnecessary arguments present"
             pass
-        elif (command == CMD_SET.CLEAR_LINES) or (command == CMD_SET.REMOVE_ALL_MEDIUM):
+        elif (command == CMD_SET.REMOVE_ALL_MEDIUM) or (command == CMD_SET.EJECT_MEDIUM):
+            # Need open loop disc pump power, debounce time (ms), timeout time(ms), and pressure scale
+            assert len(args) == 4, "Need power, debounce time, timeout time, and pressure scale"
+
+            o_power = np.uint16(args[0])
+            assert args[0] == o_power, "Open loop power not uint16"
+            
+            t_debounce = np.uint16(args[1])
+            assert t_debounce == args[1], "debounce time is not uint16"
+
+            t_timeout = np.uint16(args[2])
+            assert t_timeout == args[2], "timeout time is not uint16"
+
+            pscale_intermediate = int(args[3] * np.iinfo(np.uint8).max)
+            pscale = np.uint8(pscale_intermediate)
+            assert pscale == pscale_intermediate, "error calculating pscale"
+
+            pwr_hi, pwr_lo = uint_to_bytes(o_power, 2)
+            db_hi, db_lo = uint_to_bytes(t_debounce, 2)
+            tt_hi,tt_lo = uint_to_bytes(t_timeout, 2)
+            command_array.append(pwr_hi)
+            command_array.append(pwr_lo)
+            command_array.append(tt_hi)
+            command_array.append(tt_lo)
+            command_array.append(db_hi)
+            command_array.append(db_lo)
+            command_array.append(pscale)
+            pass
+        elif command == CMD_SET.CLEAR_LINES:
             # Need open loop disc pump power, debounce time (ms), and timeout time(ms)
             assert len(args) == 3, "Need power, debounce time, and timeout time"
 
@@ -610,18 +638,21 @@ class FluidController(Microcontroller):
             command_array.append(do_integration)
             command_array.append(reset_volume)
             pass
-        elif command == CMD_SET.LOAD_FLUID_VOLUME:
+        elif (command == CMD_SET.LOAD_FLUID_VOLUME) or (command == CMD_SET.UNLOAD_FLUID_VOLUME):
             # Need control type, setpoint (ignore if control type is BB), timeout time in ms, and volume to load
             loop_type = np.uint8(args[0])
             assert loop_type == args[0], "Loop type must be uint8"
-            if loop_type == MCU_CONSTANTS.FLUID_IN_BANG_BANG:
+            if (loop_type == MCU_CONSTANTS.FLUID_IN_BANG_BANG) or (loop_type == MCU_CONSTANTS.FLUID_OUT_BANG_BANG) :
                 assert len(args) == 3, "Need control type, timeout time, and volume target"
                 i_shift = 1
             else:
                 assert len(args) == 4, "Need control type, setpoint, timeout time, and volume target"
                 i_shift = 0
             
-            assert loop_type in [MCU_CONSTANTS.OPEN_LOOP_CTRL, MCU_CONSTANTS.FLUID_IN_BANG_BANG, MCU_CONSTANTS.VACUUM_PID], "Control type must be open loop, fluid in BB, or vacuum BB"
+            if command == CMD_SET.LOAD_FLUID_VOLUME:
+                assert loop_type in [MCU_CONSTANTS.OPEN_LOOP_CTRL, MCU_CONSTANTS.FLUID_IN_BANG_BANG, MCU_CONSTANTS.VACUUM_PID], "Control type must be open loop, fluid in BB, or vacuum PID"
+            else:
+                assert loop_type in [MCU_CONSTANTS.OPEN_LOOP_CTRL, MCU_CONSTANTS.FLUID_OUT_BANG_BANG, MCU_CONSTANTS.FLUID_OUT_PID, MCU_CONSTANTS.PRESSURE_PID], "Control type must be open loop, fluid out BB, fluid out PID, or pressure PID"
             
             t_timeout = np.uint16(args[2-i_shift])
             assert t_timeout == args[2-i_shift], "timeout time is not uint16"
@@ -635,8 +666,12 @@ class FluidController(Microcontroller):
             if loop_type == MCU_CONSTANTS.OPEN_LOOP_CTRL:
                 setpoint = np.uint16(args[1])
                 assert setpoint == args[1], "power not uint16"
-            elif loop_type == MCU_CONSTANTS.VACUUM_PID:
+            elif (loop_type == MCU_CONSTANTS.VACUUM_PID) or (loop_type == MCU_CONSTANTS.PRESSURE_PID):
                 setpoint_intermediate = int((abs(args[1])/abs(MCU_CONSTANTS._p_min)) * np.iinfo(np.uint16).max)
+                setpoint = np.uint16(setpoint_intermediate)
+                assert setpoint == setpoint_intermediate, "Error calculating pressure setpoint"
+            elif loop_type == MCU_CONSTANTS.FLUID_OUT_PID:
+                setpoint_intermediate = int((abs(args[1])/abs(MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN)) * np.iinfo(np.uint16).max)
                 setpoint = np.uint16(setpoint_intermediate)
                 assert setpoint == setpoint_intermediate, "Error calculating pressure setpoint"
             
