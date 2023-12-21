@@ -400,10 +400,10 @@ class FluidController(Microcontroller):
             loop_type = np.uint8(args[0])
             assert loop_type in MCU_CONSTANTS.BB_LOOP_TYPES, "loop type is not a bang-bang type"
 
-            t_lower_intermediate = int((args[1]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            t_lower_intermediate = args[1] * MCU_CONSTANTS.SCALE_FACTOR_FLOW
             t_lower = np.uint16(t_lower_intermediate)
             assert t_lower_intermediate == t_lower, "Error calculating lower bound"
-            t_upper_intermediate = int((args[2]/MCU_CONSTANTS.SLF3X_MAX_VAL_uL_MIN) * np.iinfo(np.uint16).max)
+            t_upper_intermediate = args[2] * MCU_CONSTANTS.SCALE_FACTOR_FLOW
             t_upper = np.uint16(t_upper_intermediate)
             assert t_upper_intermediate == t_upper, "Error calculating upper bound"
 
@@ -461,10 +461,10 @@ class FluidController(Microcontroller):
             assert ilim_intermediate == ilim, "Error calculating integral winding limit"
             
 
-            o_lower = np.uint16(args[3])
-            assert args[3] == o_lower, "Lower output not uint16"
-            o_upper = np.uint16(args[4])
-            assert args[4] == o_upper, "Upper output not uint16"
+            o_lower = np.uint16(args[5])
+            assert args[5] == o_lower, "Lower output not uint16"
+            o_upper = np.uint16(args[6])
+            assert args[6] == o_upper, "Upper output not uint16"
 
             timestep = np.uint32(args[7])
             assert timestep == args[7], "Timestep is not uint32"
@@ -667,7 +667,7 @@ class FluidController(Microcontroller):
                 setpoint = np.uint16(args[1])
                 assert setpoint == args[1], "power not uint16"
             elif (loop_type == MCU_CONSTANTS.VACUUM_PID) or (loop_type == MCU_CONSTANTS.PRESSURE_PID):
-                setpoint_intermediate = int((abs(args[1])/abs(MCU_CONSTANTS._p_min)) * np.iinfo(np.uint16).max)
+                setpoint_intermediate = int(MCU_CONSTANTS._output_min + (args[0] - MCU_CONSTANTS._p_min) * (MCU_CONSTANTS._output_max - MCU_CONSTANTS._output_min) / (MCU_CONSTANTS._p_max - MCU_CONSTANTS._p_min))
                 setpoint = np.uint16(setpoint_intermediate)
                 assert setpoint == setpoint_intermediate, "Error calculating pressure setpoint"
             elif loop_type == MCU_CONSTANTS.FLUID_OUT_PID:

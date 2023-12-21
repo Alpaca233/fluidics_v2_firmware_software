@@ -22,10 +22,10 @@ class MCU_CONSTANTS:
   MEDIUM_IPA = 0x15
   MEDIA = [MEDIUM_IPA, MEDIUM_WATER]
   # PID params
-  KP_MAX =  128
-  KI_MAX =  128
-  KD_MAX =  128
-  ILIM_MAX = np.iinfo(np.uint32).max
+  KP_MAX =  8
+  KI_MAX =  1
+  KD_MAX =  8
+  ILIM_MAX = np.iinfo(np.uint16).max
   # Disc pump params
   TTP_MAX_PW = 1000
   # Control loop params
