@@ -94,8 +94,8 @@ elif CTRL == "press_pid":
     print(f"Unload {v} uL of fluid with pressure PID")
     fc.send_command_blocking(CMD_SET.UNLOAD_FLUID_VOLUME, MCU_CONSTANTS.PRESSURE_PID, 30000, v)
 elif CTRL == "bb/flow":
-    fc.send_command_blocking(CMD_SET.INITIALIZE_BANG_BANG_PARAMS, MCU_CONSTANTS.FLUID_IN_BANG_BANG,  600, 1000, 10, 200, 20)
-    fc.send_command_blocking(CMD_SET.INITIALIZE_PID_PARAMS, MCU_CONSTANTS.FLUID_OUT_PID, 0.01, 0.00005, 0.001, MCU_CONSTANTS.ILIM_MAX, 0, MCU_CONSTANTS.TTP_MAX_PW, 20)
+    fc.send_command_blocking(CMD_SET.INITIALIZE_BANG_BANG_PARAMS, MCU_CONSTANTS.FLUID_IN_BANG_BANG,  1000, 1500, 10, 800, 20) # 0.175
+    fc.send_command_blocking(CMD_SET.INITIALIZE_PID_PARAMS, MCU_CONSTANTS.FLUID_OUT_PID, 0.002, 0.006, 0, MCU_CONSTANTS.ILIM_MAX, 0, int((1/5)*MCU_CONSTANTS.TTP_MAX_PW), 20)
     print(f"Load {v} uL of fluid bang-bang")
     fc.send_command_blocking(CMD_SET.LOAD_FLUID_VOLUME, MCU_CONSTANTS.FLUID_IN_BANG_BANG, 30000, v)
     print("Test retention")
@@ -104,7 +104,9 @@ elif CTRL == "bb/flow":
     print(f"Unload {v} uL of fluid with flowrate PID")
     fc.send_command_blocking(CMD_SET.UNLOAD_FLUID_VOLUME, MCU_CONSTANTS.FLUID_OUT_PID, 1000, 50000, v)
 print("Clear extra fluid from the reservoir")
-fc.send_command_blocking(CMD_SET.CLEAR_LINES, int((3/5) * MCU_CONSTANTS.TTP_MAX_PW), 1000, 5000)
+fc.send_command_blocking(CMD_SET.SET_ROTARY_VALVE, 0, 2)
+fc.send_command_blocking(CMD_SET.CLEAR_LINES, int(MCU_CONSTANTS.TTP_MAX_PW), 4000, 30000)
+fc.send_command_blocking(CMD_SET.SET_ROTARY_VALVE, 0, 1)
 print("Eject fluid into open chamber")
 fc.send_command_blocking(CMD_SET.EJECT_MEDIUM, int((1/5) * MCU_CONSTANTS.TTP_MAX_PW), 500, 10000, 0.4)
 print("Withdraw fluid from open chamber")
