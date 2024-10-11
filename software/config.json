@@ -1,0 +1,25 @@
+{
+  "microcontroller": {
+    "serial_number": "13995310"
+  },
+  "syringe_pump": {
+    "serial_number": "SP123456",
+    "volume_ul": 10000
+  },
+  "selector_valves": [
+    {
+      "pcb_port": 2,
+      "max_position": 12,
+      "connection": {
+        "position": 4,
+        "destination_selector_valve": 3
+      }
+    },
+    {
+      "pcb_port": 3,
+      "max_position": 10,
+      "connection": null
+    }
+  ],
+  "application": "MERFISH"
+}

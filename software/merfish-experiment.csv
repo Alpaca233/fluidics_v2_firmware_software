@@ -1,0 +1,6 @@
+sequence_name,fluidic_port,flow_rate,volume,incubation_time,repeat,include
+Flow Bleaching Buffer,3,1200,2500,15,1,0
+Hybridize,10,500,2000,15,1,1
+Flow Wash Buffer,1,500,2000,5,1,1
+Flow Imaging Buffer,2,500,2000,0,1,1
+Flow Bleaching Buffer,3,500,2000,0,1,1
