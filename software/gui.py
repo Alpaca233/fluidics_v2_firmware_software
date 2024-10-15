@@ -6,9 +6,10 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar,
                              QGroupBox, QGridLayout, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from controller import FluidController
 from syringe_pump import SyringePumpSimulation as SyringePump
+from merfish_operations import MERFISHOperations
 import utils
 import time
 
@@ -65,10 +66,19 @@ class PortDelegate(QStyledItemDelegate):
             self.parent().setIndexWidget(index, comboBox)
 
 class SequencesWidget(QWidget):
-    def __init__(self, config):
+    def __init__(self, config, controller, syringe):
         super().__init__()
         self.config = config
+        self.controller = controller
+        self.syringePump = syringe
+        self.sequences = []
+        self.experiment_ops = None  # Will be set based on the selected application
+        self.worker = None
         self.simplified_to_actual, self.actual_to_simplified = utils.create_port_mapping(config)
+
+        if self.config['application'] == 'MERFISH':
+            self.experiment_ops = MERFISHOperations(self.controller, self.syringePump, self.config, self.simplified_to_actual)
+
         self.initUI()
 
     def initUI(self):
@@ -90,7 +100,7 @@ class SequencesWidget(QWidget):
         self.selectNoneButton = QPushButton("Select None")
         self.selectNoneButton.clicked.connect(self.selectNone)
         self.runButton = QPushButton("Run Selected Sequences")
-        self.runButton.clicked.connect(self.runSequences)
+        self.runButton.clicked.connect(self.runSelectedSequences)
         self.abortButton = QPushButton("Abort")
         self.abortButton.clicked.connect(self.abortSequences)
         self.abortButton.setEnabled(False)  # Initially disabled
@@ -103,6 +113,11 @@ class SequencesWidget(QWidget):
         buttonLayout.addWidget(self.abortButton)
 
         layout.addLayout(buttonLayout)
+
+        # Progress bar
+        self.progressBar = QProgressBar()
+        layout.addWidget(QLabel("Execution Progress:"))
+        layout.addWidget(self.progressBar)
 
         self.setLayout(layout)
 
@@ -183,17 +198,85 @@ class SequencesWidget(QWidget):
         for row in range(self.table.rowCount()):
             self.table.cellWidget(row, 6).setChecked(False)
 
-    def runSequences(self):
-        # Placeholder for running sequences
-        QMessageBox.information(self, "Run Sequences", "Running selected sequences...")
-        self.abortButton.setEnabled(True)
+    def runSelectedSequences(self):
+        # TODO: map speed codes
+        selected_sequences = []
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 6).isChecked():
+                sequence = {
+                    'sequence_name': self.table.item(row, 0).text(),
+                    'fluidic_port': self.table.item(row, 1).text(),
+                    'flow_rate': self.table.item(row, 2).text(),
+                    'volume': self.table.item(row, 3).text(),
+                    'incubation_time': self.table.item(row, 4).text(),
+                    'repeat': int(self.table.item(row, 5).text()),
+                }
+                selected_sequences.append(sequence)
+
+        if not selected_sequences:
+            QMessageBox.warning(self, "No Sequences Selected", "Please select at least one sequence to run.")
+            return
+
         self.runButton.setEnabled(False)
+        self.abortButton.setEnabled(True)
+        self.worker = ExperimentWorker(self.experiment_ops, selected_sequences)
+        self.worker.progress.connect(self.updateProgress)
+        self.worker.error.connect(self.showError)
+        self.worker.finished.connect(self.onWorkerFinished)
+        self.worker.start()
 
     def abortSequences(self):
-        # Placeholder for aborting sequences
-        QMessageBox.information(self, "Abort Sequences", "Aborting sequences...")
-        self.abortButton.setEnabled(False)
+        if self.worker and self.experiment_ops:
+            self.experiment_ops.abort()
+            self.abortButton.setEnabled(False)
+
+    def updateProgress(self, message, percentage=None):
+        if percentage is not None:
+            self.progressBar.setValue(int(percentage))
+        QMessageBox.information(self, "Progress", message)
+
+    def showError(self, error_message):
+        QMessageBox.critical(self, "Error", error_message)
+
+    def onWorkerFinished(self):
         self.runButton.setEnabled(True)
+        self.abortButton.setEnabled(False)
+        self.progressBar.setValue(0)
+        QMessageBox.information(self, "Complete", "All selected sequences have been executed.")
+
+    def setExperimentOperations(self, experiment_ops):
+        self.experiment_ops = experiment_ops
+
+class ExperimentWorker(QThread):
+    progress = pyqtSignal(str, int)
+    error = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self, experiment_ops, sequences):
+        super().__init__()
+        self.experiment_ops = experiment_ops
+        self.sequences = sequences
+
+    def run(self):
+        self.experiment_ops.set_callbacks(self.progress.emit, self.error.emit)
+        total_sequences = sum(seq['repeat'] for seq in self.sequences)
+        completed_sequences = 0
+
+        try:
+            for sequence in self.sequences:
+                for _ in range(sequence['repeat']):
+                    try:
+                        self.experiment_ops.run_sequence(sequence)
+                        completed_sequences += 1
+                        progress_percentage = (completed_sequences / total_sequences) * 100
+                        self.progress.emit(f"Completed {completed_sequences}/{total_sequences} sequences", progress_percentage)
+                    except AbortRequested:
+                        self.error.emit("Operation aborted by user")
+                        return
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            self.finished.emit()
 
 class ManualControlWidget(QWidget):
     def __init__(self, config, controller, syringe):
@@ -325,6 +408,7 @@ class ManualControlWidget(QWidget):
         # self.timer.start(100)  # Update every 100 ms
 
     def updateProgress(self):
+        # TODO: unfinished
         current = self.syringeProgressBar.value()
         if current < self.syringeProgressBar.maximum():
             self.syringeProgressBar.setValue(current + 1)
@@ -332,6 +416,7 @@ class ManualControlWidget(QWidget):
             self.timer.stop()
 
     def updatePlungerPosition(self):
+        # TODO: unfinished
         try:
             position = self.syringePump.get_plunger_position() * self.config['syringe_pump']['volume_ul']
             self.plungerPositionBar.setValue(position)
@@ -359,7 +444,7 @@ class FluidicsControlGUI(QMainWindow):
         tabWidget = QTabWidget()
         
         # "Run Experiments" tab
-        runExperimentsTab = SequencesWidget(self.config)
+        runExperimentsTab = SequencesWidget(self.config, self.controller, self.syringePump)
         tabWidget.addTab(runExperimentsTab, "Run Experiments")
 
         # "Settings and Manual Control" tab
