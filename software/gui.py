@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer
 from controller import FluidController
-from syringe_pump import SyringePump
+from syringe_pump import SyringePumpSimulation as SyringePump
 import utils
 import time
 
@@ -196,10 +196,11 @@ class SequencesWidget(QWidget):
         self.runButton.setEnabled(True)
 
 class ManualControlWidget(QWidget):
-    def __init__(self, config, controller):
+    def __init__(self, config, controller, syringe):
         super().__init__()
         self.config = config
         self.controller = controller
+        self.syringePump = syringe
         self.simplified_to_actual, self.actual_to_simplified = utils.create_port_mapping(config)
         self.initUI()
 
@@ -235,11 +236,13 @@ class ManualControlWidget(QWidget):
         leftLayout.addWidget(QLabel("Port:"), 0, 0)
         leftLayout.addWidget(self.syringePortCombo, 0, 1)
 
-        self.speedSpinBox = QSpinBox()
-        self.speedSpinBox.setRange(1, 5000)
-        self.speedSpinBox.setSuffix(" μL/min")
+        self.speedCombo = QComboBox()
+        for code in self.syringePump.SPEED_SEC.keys():
+            rate = self.syringePump.get_flow_rate(code)
+            self.speedCombo.addItem(f"{rate} μL/min", code)
+        self.speedCombo.setCurrentIndex(40)  # Set default to code 40
         leftLayout.addWidget(QLabel("Speed:"), 1, 0)
-        leftLayout.addWidget(self.speedSpinBox, 1, 1)
+        leftLayout.addWidget(self.speedCombo, 1, 1)
 
         self.volumeSpinBox = QSpinBox()
         self.volumeSpinBox.setRange(1, self.config['syringe_pump']['volume_ul'])
@@ -261,10 +264,10 @@ class ManualControlWidget(QWidget):
         # Right side - Plunger position
         rightWidget = QWidget()
         rightLayout = QVBoxLayout(rightWidget)
-        self.plungerPositionLabel = QLabel("Plunger Position")
+        self.plungerPositionLabel = QLabel("Plunger Position (μL)")
         rightLayout.addWidget(self.plungerPositionLabel, alignment=Qt.AlignHCenter)
         self.plungerPositionBar = QProgressBar()
-        self.plungerPositionBar.setRange(0, 3000)  # XCaliburD has 3000 steps in standard mode
+        self.plungerPositionBar.setRange(0, self.config['syringe_pump']['volume_ul'])  # XCaliburD has 3000 steps in standard mode
         self.plungerPositionBar.setOrientation(Qt.Vertical)
         self.plungerPositionBar.setTextVisible(False)
         rightLayout.addWidget(self.plungerPositionBar, alignment=Qt.AlignHCenter)
@@ -273,6 +276,7 @@ class ManualControlWidget(QWidget):
 
         syringeLayout.addLayout(topLayout)
         
+        # TODO: progress bar
         self.syringeProgressBar = QProgressBar()
         self.syringeProgressBar.setRange(0, 100)
         syringeLayout.addWidget(QLabel("Execution Progress:"))
@@ -292,30 +296,33 @@ class ManualControlWidget(QWidget):
         QMessageBox.information(self, "Valve Opened", f"Opened valve path to simplified port {simplified_port}")
 
     def pushSyringe(self):
-        self.operateSyringe("dispense")
+        self._operateSyringe("dispense")
 
     def pullSyringe(self):
-        self.operateSyringe("extract")
+        self._operateSyringe("extract")
 
-    def operateSyringe(self, action):
-        simplified_port = int(self.syringePortCombo.currentText())
-        speed = self.speedSpinBox.value()
+    def _operateSyringe(self, action):
+        # TODO: check if the syringe pump is ready
+
+        syringe_port = int(self.syringePortCombo.currentText())
+        speed_code = self.speedCombo.currentData()
         volume = self.volumeSpinBox.value()
         
-        # Open the valve path
-        utils.open_selector_valve_path(self.controller, self.config, simplified_port, self.simplified_to_actual)
+        try:
+            # Start syringe operation
+            if action == "dispense":
+                exec_time = self.syringePump.dispense(syringe_port, volume, speed_code)
+            else:  # extract
+                exec_time = self.syringePump.extract(syringe_port, volume, speed_code)
+        except:
+            print("Error operating syringe pump")
+        # # Simulate progress
+        # self.syringeProgressBar.setRange(0, volume)
+        # self.syringeProgressBar.setValue(0)
         
-        # Dummy function for syringe pump operation
-        QMessageBox.information(self, "Syringe Operation", 
-                                f"Syringe {action}: Simplified Port {simplified_port}, Speed {speed} μL/min, Volume {volume} μL")
-        
-        # Simulate progress
-        self.syringeProgressBar.setRange(0, volume)
-        self.syringeProgressBar.setValue(0)
-        
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.updateProgress)
-        self.timer.start(100)  # Update every 100 ms
+        # self.timer = QTimer(self)
+        # self.timer.timeout.connect(self.updateProgress)
+        # self.timer.start(100)  # Update every 100 ms
 
     def updateProgress(self):
         current = self.syringeProgressBar.value()
@@ -325,8 +332,12 @@ class ManualControlWidget(QWidget):
             self.timer.stop()
 
     def updatePlungerPosition(self):
-        #self.syringe_pump.get_plunger_position()
-        pass
+        try:
+            position = self.syringePump.get_plunger_position() * self.config['syringe_pump']['volume_ul']
+            self.plungerPositionBar.setValue(position)
+            #self.plungerPositionLabel.setText(f"Plunger Position: {position}")
+        except:
+            print(f"Error updating plunger position")
 
 class FluidicsControlGUI(QMainWindow):
     def __init__(self):
@@ -352,7 +363,7 @@ class FluidicsControlGUI(QMainWindow):
         tabWidget.addTab(runExperimentsTab, "Run Experiments")
 
         # "Settings and Manual Control" tab
-        manualControlTab = ManualControlWidget(self.config, self.controller)
+        manualControlTab = ManualControlWidget(self.config, self.controller, self.syringePump)
         tabWidget.addTab(manualControlTab, "Settings and Manual Control")
 
         self.setCentralWidget(tabWidget)

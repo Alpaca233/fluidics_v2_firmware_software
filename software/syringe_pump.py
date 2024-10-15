@@ -61,6 +61,9 @@ class SyringePump:
     def check_ready(self):
         return self.syringe._checkReady()
 
+    def get_flow_rate(self, speed_code):
+        return round(self.volume * 60 / self.SPEED_SEC[speed_code], 2)
+
 class SyringePumpSimulation():
     SPEED_SEC = {0: 1.25, 1: 1.30, 2: 1.39, 3: 1.52, 4: 1.71, 5: 1.97,
                 6: 2.37, 7: 2.77, 8: 3.03, 9: 3.36, 10: 3.77, 11: 4.30,
@@ -109,3 +112,6 @@ class SyringePumpSimulation():
 
     def check_ready(self):
         return True
+
+    def get_flow_rate(self, speed_code):
+        return round(self.volume * 60 / self.SPEED_SEC[speed_code], 2)
