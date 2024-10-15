@@ -5,9 +5,10 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar,
-                             QGroupBox, QGridLayout)
+                             QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer
 from controller import FluidController
+#import tecancavro
 import utils
 import time
 
@@ -210,54 +211,80 @@ class ManualControlWidget(QWidget):
         valveGroupBox = QGroupBox("Selector Valve Control")
         valveLayout = QHBoxLayout()
         valveLayout.setContentsMargins(5, 5, 5, 5)
+        valveLayout.addWidget(QLabel("Open Valve:"))
         self.valveCombo = QComboBox()
         self.valveCombo.addItems(map(str, utils.get_simplified_ports(self.config)))
-        self.openValveButton = QPushButton("Open Valve")
-        self.openValveButton.clicked.connect(self.openValve)
+        self.valveCombo.currentIndexChanged.connect(self.openValve)
         valveLayout.addWidget(self.valveCombo)
-        valveLayout.addWidget(self.openValveButton)
         valveGroupBox.setLayout(valveLayout)
         mainLayout.addWidget(valveGroupBox)
 
         # Syringe Pump Control
         syringeGroupBox = QGroupBox("Syringe Pump Control")
-        syringeLayout = QGridLayout()
+        syringeLayout = QVBoxLayout()
         syringeLayout.setContentsMargins(5, 5, 5, 5)
         syringeLayout.setSpacing(5)
 
+        topLayout = QHBoxLayout()
+
+        # Left side controls
+        leftWidget = QWidget()
+        leftLayout = QGridLayout(leftWidget)
         self.syringePortCombo = QComboBox()
-        self.syringePortCombo.addItems(map(str, utils.get_simplified_ports(self.config)))
-        syringeLayout.addWidget(QLabel("Port:"), 0, 0)
-        syringeLayout.addWidget(self.syringePortCombo, 0, 1)
+        self.syringePortCombo.addItems(map(str, self.config['syringe_pump']['ports_allowed']))
+        leftLayout.addWidget(QLabel("Port:"), 0, 0)
+        leftLayout.addWidget(self.syringePortCombo, 0, 1)
 
         self.speedSpinBox = QSpinBox()
         self.speedSpinBox.setRange(1, 5000)
         self.speedSpinBox.setSuffix(" μL/min")
-        syringeLayout.addWidget(QLabel("Speed:"), 1, 0)
-        syringeLayout.addWidget(self.speedSpinBox, 1, 1)
+        leftLayout.addWidget(QLabel("Speed:"), 1, 0)
+        leftLayout.addWidget(self.speedSpinBox, 1, 1)
 
         self.volumeSpinBox = QSpinBox()
-        self.volumeSpinBox.setRange(1, 10000)
+        self.volumeSpinBox.setRange(1, self.config['syringe_pump']['volume_ul'])
         self.volumeSpinBox.setSuffix(" μL")
-        syringeLayout.addWidget(QLabel("Volume:"), 2, 0)
-        syringeLayout.addWidget(self.volumeSpinBox, 2, 1)
+        leftLayout.addWidget(QLabel("Volume:"), 2, 0)
+        leftLayout.addWidget(self.volumeSpinBox, 2, 1)
 
         actionLayout = QHBoxLayout()
-        self.pushButton = QPushButton("Push")
-        self.pushButton.clicked.connect(self.pushSyringe)
-        self.pullButton = QPushButton("Pull")
-        self.pullButton.clicked.connect(self.pullSyringe)
+        self.pushButton = QPushButton("Extract")
+        self.pushButton.clicked.connect(self.pullSyringe)
+        self.pullButton = QPushButton("Dispense")
+        self.pullButton.clicked.connect(self.pushSyringe)
         actionLayout.addWidget(self.pushButton)
         actionLayout.addWidget(self.pullButton)
-        syringeLayout.addLayout(actionLayout, 3, 0, 1, 2)
+        leftLayout.addLayout(actionLayout, 3, 0, 1, 2)
 
+        topLayout.addWidget(leftWidget, 3)
+
+        # Right side - Plunger position
+        rightWidget = QWidget()
+        rightLayout = QVBoxLayout(rightWidget)
+        self.plungerPositionLabel = QLabel("Plunger Position")
+        rightLayout.addWidget(self.plungerPositionLabel, alignment=Qt.AlignHCenter)
+        self.plungerPositionBar = QProgressBar()
+        self.plungerPositionBar.setRange(0, 3000)  # XCaliburD has 3000 steps in standard mode
+        self.plungerPositionBar.setOrientation(Qt.Vertical)
+        self.plungerPositionBar.setTextVisible(False)
+        rightLayout.addWidget(self.plungerPositionBar, alignment=Qt.AlignHCenter)
+
+        topLayout.addWidget(rightWidget, 1)
+
+        syringeLayout.addLayout(topLayout)
+        
         self.syringeProgressBar = QProgressBar()
-        syringeLayout.addWidget(self.syringeProgressBar, 4, 0, 1, 2)
+        self.syringeProgressBar.setRange(0, 100)
+        syringeLayout.addWidget(QLabel("Execution Progress:"))
+        syringeLayout.addWidget(self.syringeProgressBar)
 
         syringeGroupBox.setLayout(syringeLayout)
         mainLayout.addWidget(syringeGroupBox)
 
         self.setLayout(mainLayout)
+
+        # Initialize plunger position
+        self.updatePlungerPosition()
 
     def openValve(self):
         simplified_port = int(self.valveCombo.currentText())
@@ -265,10 +292,10 @@ class ManualControlWidget(QWidget):
         QMessageBox.information(self, "Valve Opened", f"Opened valve path to simplified port {simplified_port}")
 
     def pushSyringe(self):
-        self.operateSyringe("push")
+        self.operateSyringe("dispense")
 
     def pullSyringe(self):
-        self.operateSyringe("pull")
+        self.operateSyringe("extract")
 
     def operateSyringe(self, action):
         simplified_port = int(self.syringePortCombo.currentText())
@@ -297,11 +324,28 @@ class ManualControlWidget(QWidget):
         else:
             self.timer.stop()
 
+    def updatePlungerPosition(self):
+        #self.syringe_pump.get_plunger_position()
+        pass
+
 class FluidicsControlGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = utils.load_config()
         self.controller = FluidController(self.config['microcontroller']['serial_number'])
+        '''
+        syringePumpAddr = tecancavro.transport.TecanAPISerial.findSerialPumps()
+        print("Found syringe pump: ", syringePumpAddr)
+        self.syringePump = tecancavro.models.XCaliburD(com_link=tecancavro.TecanAPISerial(tecan_addr=0, ser_port=syringePumpAddr[0][0], ser_baud=9600), 
+                            num_ports=3,
+                            syringe_ul=self.config['syringe_pump']['volume_ul'], 
+                            microstep=False, 
+                            waste_port=3, 
+                            slope=14, 
+                            debug=False, 
+                            debug_log_path='.')
+        print("Syringe pump initiated.")
+        '''
         self.initUI()
 
     def initUI(self):

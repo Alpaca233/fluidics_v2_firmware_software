@@ -3,8 +3,8 @@
     "serial_number": "13995310"
   },
   "syringe_pump": {
-    "serial_number": "SP123456",
-    "volume_ul": 10000
+    "volume_ul": 5000,
+    "ports_allowed": [1, 2, 3]
   },
   "selector_valves": [
     {
