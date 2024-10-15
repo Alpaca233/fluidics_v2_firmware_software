@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer
 from controller import FluidController
-#import tecancavro
+from syringe_pump import SyringePump
 import utils
 import time
 
@@ -333,19 +333,11 @@ class FluidicsControlGUI(QMainWindow):
         super().__init__()
         self.config = utils.load_config()
         self.controller = FluidController(self.config['microcontroller']['serial_number'])
-        '''
-        syringePumpAddr = tecancavro.transport.TecanAPISerial.findSerialPumps()
-        print("Found syringe pump: ", syringePumpAddr)
-        self.syringePump = tecancavro.models.XCaliburD(com_link=tecancavro.TecanAPISerial(tecan_addr=0, ser_port=syringePumpAddr[0][0], ser_baud=9600), 
-                            num_ports=3,
+
+        self.syringePump = SyringePump(
                             syringe_ul=self.config['syringe_pump']['volume_ul'], 
-                            microstep=False, 
-                            waste_port=3, 
-                            slope=14, 
-                            debug=False, 
-                            debug_log_path='.')
-        print("Syringe pump initiated.")
-        '''
+                            waste_port=3)
+
         self.initUI()
 
     def initUI(self):
