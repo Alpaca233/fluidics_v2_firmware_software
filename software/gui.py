@@ -6,12 +6,13 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar,
                              QGroupBox, QGridLayout, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
 from controller import FluidController
-from syringe_pump import SyringePumpSimulation as SyringePump
+from syringe_pump import SyringePump as SyringePump
 from merfish_operations import MERFISHOperations
 import utils
 import time
+import threading
 
 class SpinBoxDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -285,7 +286,20 @@ class ManualControlWidget(QWidget):
         self.controller = controller
         self.syringePump = syringe
         self.simplified_to_actual, self.actual_to_simplified = utils.create_port_mapping(config)
+
+        # Initialize timers
+        self.progress_timer = QTimer(self)
+        self.progress_timer.timeout.connect(self.updateProgress)
+        
+        self.plunger_timer = QTimer(self)
+        self.plunger_timer.timeout.connect(self.updatePlungerPosition)
+        
+        self.operation_start_time = None
+        self.operation_duration = None
+
         self.initUI()
+
+        self.plunger_timer.start(500)
 
     def initUI(self):
         mainLayout = QVBoxLayout()
@@ -385,44 +399,106 @@ class ManualControlWidget(QWidget):
         self._operateSyringe("extract")
 
     def _operateSyringe(self, action):
-        # TODO: check if the syringe pump is ready
+        if self.syringePump.is_busy:
+            print("Syringe pump is busy.")
+            return
 
         syringe_port = int(self.syringePortCombo.currentText())
         speed_code = self.speedCombo.currentData()
         volume = self.volumeSpinBox.value()
         
         try:
-            # Start syringe operation
+            # Disable control buttons during operation
+            self.setControlsEnabled(False)
+
+            # Start operation
             if action == "dispense":
                 exec_time = self.syringePump.dispense(syringe_port, volume, speed_code)
-            else:  # extract
+            else:
                 exec_time = self.syringePump.extract(syringe_port, volume, speed_code)
-        except:
-            print("Error operating syringe pump")
-        # # Simulate progress
-        # self.syringeProgressBar.setRange(0, volume)
-        # self.syringeProgressBar.setValue(0)
-        
-        # self.timer = QTimer(self)
-        # self.timer.timeout.connect(self.updateProgress)
-        # self.timer.start(100)  # Update every 100 ms
+
+            # Set up progress tracking
+            self.operation_duration = exec_time
+
+            # Start syringe operation in a separate thread
+            operation_thread = threading.Thread(target=self._executeSyringeOperation, 
+                                             args=(action, syringe_port, volume, speed_code))
+            operation_thread.daemon = True
+            operation_thread.start()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error operating syringe pump: {str(e)}")
+            self.setControlsEnabled(True)
+
+    def _executeSyringeOperation(self, action, syringe_port, volume, speed_code):
+        try:
+            self.operation_start_time = time.time()
+
+            # Start progress updates
+            QMetaObject.invokeMethod(self, "startProgressTimer", Qt.QueuedConnection)
+
+            self.syringePump.execute()
+
+            # Clean up
+            QMetaObject.invokeMethod(self, "operationComplete", Qt.QueuedConnection)
+            
+        except Exception as e:
+            QMetaObject.invokeMethod(self, "handleError", 
+                                   Qt.QueuedConnection,
+                                   Q_ARG(str, str(e)))
+
+    @pyqtSlot()
+    def startProgressTimer(self):
+        self.syringeProgressBar.setValue(0)
+        self.progress_timer.start(100)  # Update progress every 100ms
+
+    @pyqtSlot()
+    def operationComplete(self):
+        self.progress_timer.stop()
+        while True:
+            if not self.syringePump.is_busy:
+                break
+            time.sleep(0.05)
+        self.syringeProgressBar.setValue(100)
+        self.setControlsEnabled(True)
+        self.operation_start_time = None
+        self.operation_duration = None
+
+    @pyqtSlot(str)
+    def handleError(self, error_message):
+        QMessageBox.critical(self, "Error", f"Syringe pump error: {error_message}")
+        self.setControlsEnabled(True)
+        self.progress_timer.stop()
+        self.syringeProgressBar.setValue(0)
+
+    def setControlsEnabled(self, enabled):
+        self.pushButton.setEnabled(enabled)
+        self.pullButton.setEnabled(enabled)
+        self.syringePortCombo.setEnabled(enabled)
+        self.speedCombo.setEnabled(enabled)
+        self.volumeSpinBox.setEnabled(enabled)
+        self.valveCombo.setEnabled(enabled)
 
     def updateProgress(self):
-        # TODO: unfinished
-        current = self.syringeProgressBar.value()
-        if current < self.syringeProgressBar.maximum():
-            self.syringeProgressBar.setValue(current + 1)
-        else:
-            self.timer.stop()
+        if self.operation_start_time is None or self.operation_duration is None:
+            return
+            
+        elapsed = time.time() - self.operation_start_time
+        progress = min(100, int((elapsed / self.operation_duration) * 100))
+        self.syringeProgressBar.setValue(progress)
 
     def updatePlungerPosition(self):
-        # TODO: unfinished
         try:
             position = self.syringePump.get_plunger_position() * self.config['syringe_pump']['volume_ul']
-            self.plungerPositionBar.setValue(position)
-            #self.plungerPositionLabel.setText(f"Plunger Position: {position}")
-        except:
-            print(f"Error updating plunger position")
+            self.plungerPositionBar.setValue(int(position))
+        except Exception as e:
+            print(f"Error updating plunger position: {str(e)}")
+
+    def closeEvent(self, event):
+        self.syringePump.close()
+        self.progress_timer.stop()
+        self.position_timer.stop()
+        super().closeEvent(event)
 
 class FluidicsControlGUI(QMainWindow):
     def __init__(self):

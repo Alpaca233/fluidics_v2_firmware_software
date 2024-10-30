@@ -1,5 +1,6 @@
 import tecancavro
 import time
+import threading
 
 class SyringePump:
     SPEED_SEC = {0: 1.25, 1: 1.30, 2: 1.39, 3: 1.52, 4: 1.71, 5: 1.97,
@@ -24,11 +25,23 @@ class SyringePump:
         self.volume = syringe_ul
         self.range = 3000
 
+        #self.plunger_position_updating_event = threading.Event()
+        #self.plunger_position_updating_thread = threading.Thread(target=self.return_plunger_position_info, daemon=True)
+        #self.pos_callback_external = None
+
+        self.is_busy = False
+
         print("Syringe pump initiated.")
 
     def get_plunger_position(self):
         position = self.syringe.getPlungerPos()
-        return position / self.range 
+        return position / self.range
+
+    def return_plunger_position_info(self):
+        #while not self.plunger_position_updating_event.is_set():
+        #    if self.pos_callback_external is not None:
+        #        self.pos_callback_external(self)
+        pass
 
     def set_speed(self, speed_code):
         self.syringe.setSpeed(speed_code)
@@ -45,24 +58,42 @@ class SyringePump:
     def reset_chain(self):
         self.syringe.resetChain()
 
-    def execute(self):
-        return self.syringe.executeChain()
+    def execute(self, block_pump=False):
+        self.is_busy = True
+        t = self.syringe.executeChain()
+        if block_pump:
+            self.syringe.waitReady()
+        else:
+            self.wait_for_stop(t)
+
+    def get_time_to_finish(self):
+        return self.syringe.exec_time
 
     def dispense(self, port, volume, speed_code):
+        self.syringe.resetChain()
         self.set_speed(speed_code)
         self.syringe.dispense(port, volume)
-        return self.syringe.executeChain()
+        return self.get_time_to_finish()
 
     def extract(self, port, volume, speed_code):
+        self.syringe.resetChain()
         self.set_speed(speed_code)
         self.syringe.extract(port, volume)
-        return self.syringe.executeChain()
+        return self.get_time_to_finish()
 
-    def check_ready(self):
-        return self.syringe._checkReady()
+    def wait_for_stop(self, t=0):
+        time.sleep(t)
+        while True:
+            if self.syringe._checkReady():
+                self.is_busy = False
+                break
+            time.sleep(0.1)
 
     def get_flow_rate(self, speed_code):
         return round(self.volume * 60 / self.SPEED_SEC[speed_code], 2)
+
+    def close(self):
+        self.plunger_position_updating_event.set()
 
 class SyringePumpSimulation():
     SPEED_SEC = {0: 1.25, 1: 1.30, 2: 1.39, 3: 1.52, 4: 1.71, 5: 1.97,
