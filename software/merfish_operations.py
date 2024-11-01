@@ -7,6 +7,7 @@ class MERFISHOperations(ExperimentOperations):
         super().__init__(fluid_controller, syringe_pump, config, mapping)
 
     def run_sequence(self, sequence):
+        print(sequence)
         try:
             sequence_name = sequence['sequence_name']
             port = int(sequence['fluidic_port'])
@@ -36,8 +37,9 @@ class MERFISHOperations(ExperimentOperations):
             progress = (i + 1) / total_time * 100
             self.update_progress(f"{progress_prefix}: {i+1}/{total_time} seconds", progress)
 
-    def flow_bleaching_buffer(self, port, speed_code, volume, incubation_time):
+    def flow_bleaching_buffer(self, port, flow_rate, volume, incubation_time):
         self.update_progress(f"Running Flow Bleaching Buffer: port={port}, flow_rate={flow_rate}, volume={volume}")
+        speed_code = utils.flow_rate_to_speed_code(flow_rate, self.sp)
         try:
             self.execute_command(utils.open_selector_valve_path, self.fc, self.config, port, self.simplified_to_actual)
             self.execute_command(self.sp.extract, 1, volume, speed_code)
@@ -49,6 +51,8 @@ class MERFISHOperations(ExperimentOperations):
 
     def hybridize(self, port, flow_rate, volume, incubation_time):
         self.update_progress(f"Running Hybridize: port={port}, flow_rate={flow_rate}, volume={volume}, incubation_time={incubation_time}")
+        speed_code = utils.flow_rate_to_speed_code(flow_rate, self.sp)
+        print(speed_code)
         try:
             self.execute_command(self.sp.dispense, 3, volume, speed_code)
             self.execute_command(utils.open_selector_valve_path, self.fc, self.config, port, self.simplified_to_actual)

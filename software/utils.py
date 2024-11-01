@@ -87,3 +87,43 @@ def get_simplified_ports(config):
     :return: List of simplified port numbers
     """
     return list(range(1, len(get_available_ports(config)) + 1))
+
+def flow_rate_to_speed_code(target_flow_rate, syringe_pump):
+    """
+    Map any flow rate to the closest speed code of the syringe pump
+    
+    :param flow_rate: ul/min
+    :param syringe_pump: SyringePump instance 
+    :return: speed code (int)
+    """
+    target_time = syringe_pump.volume * 60 / target_flow_rate
+
+    left = 0
+    right = len(syringe_pump.SPEED_SEC_MAPPING) - 1
+    
+    # If target is beyond the range, return the closest endpoint
+    if target_time <= syringe_pump.SPEED_SEC_MAPPING[0]:
+        return 0
+    if target_time >= syringe_pump.SPEED_SEC_MAPPING[-1]:
+        return len(syringe_pump.SPEED_SEC_MAPPING) - 1
+        
+    # Binary search
+    while left < right:
+        if right - left == 1:
+            if abs(syringe_pump.SPEED_SEC_MAPPING[left] - target_time) <= abs(syringe_pump.SPEED_SEC_MAPPING[right] - target_time):
+                return left
+            return right
+            
+        mid = (left + right) // 2
+        mid_value = syringe_pump.SPEED_SEC_MAPPING[mid]
+        
+        if mid_value == target_time:
+            return mid
+        elif mid_value > target_time:
+            right = mid
+        else:
+            left = mid
+            
+    return left
+
+#TODO: map port to reagent names

@@ -7,12 +7,13 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar,
                              QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
-from controller import FluidController
-from syringe_pump import SyringePump as SyringePump
+from controller import FluidControllerSimulation as FluidController
+from syringe_pump import SyringePumpSimulation as SyringePump
 from merfish_operations import MERFISHOperations
 import utils
 import time
 import threading
+import pandas as pd
 
 class SpinBoxDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -124,9 +125,9 @@ class SequencesWidget(QWidget):
 
     def setupTable(self):
         if self.config['application'] == "MERFISH":
-            self.table.setColumnCount(7)
+            self.table.setColumnCount(8)
             self.table.setHorizontalHeaderLabels(["Sequence Name", "Fluidic Port", "Flow Rate (μL/min)", 
-                                                  "Volume (μL)", "Incubation Time (min)", "Repeat", "Include"])
+                                                  "Volume (μL)", "Incubation Time (min)", "Repeat", "Fill Tubing With", "Include"])
             
             # Set up delegates
             spinBoxDelegate = SpinBoxDelegate(self.table)
@@ -134,6 +135,7 @@ class SequencesWidget(QWidget):
             self.table.setItemDelegateForColumn(3, spinBoxDelegate)  # Volume
             self.table.setItemDelegateForColumn(4, spinBoxDelegate)  # Incubation Time
             self.table.setItemDelegateForColumn(5, spinBoxDelegate)  # Repeat
+            self.table.setItemDelegateForColumn(6, spinBoxDelegate)  # Fill Tubing With
 
             # Set up port delegate with simplified port numbers
             simplified_ports = utils.get_simplified_ports(self.config)
@@ -146,6 +148,7 @@ class SequencesWidget(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
     def loadCSV(self):
+        # Todo: use same load/save csv and runSelectedSequences for different applications
         fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV Files (*.csv)")
         if fileName:
             with open(fileName, 'r') as file:
@@ -160,10 +163,11 @@ class SequencesWidget(QWidget):
                     self.table.setItem(rowPosition, 3, QTableWidgetItem(row['volume']))
                     self.table.setItem(rowPosition, 4, QTableWidgetItem(row['incubation_time']))
                     self.table.setItem(rowPosition, 5, QTableWidgetItem(row['repeat']))
+                    self.table.setItem(rowPosition, 6, QTableWidgetItem(row['fill_tubing_with']))
                     
                     checkbox = QCheckBox()
                     checkbox.setChecked(row['include'] == '1')
-                    self.table.setCellWidget(rowPosition, 6, checkbox)
+                    self.table.setCellWidget(rowPosition, 7, checkbox)
 
                     # Make sequence name non-editable
                     self.table.item(rowPosition, 0).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -173,11 +177,11 @@ class SequencesWidget(QWidget):
         if fileName:
             with open(fileName, 'w', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow(["sequence_name", "fluidic_port", "flow_rate", "volume", "incubation_time", "repeat", "include"])
+                writer.writerow(["sequence_name", "fluidic_port", "flow_rate", "volume", "incubation_time", "repeat", "fill_tubing_with", "include"])
                 for row in range(self.table.rowCount()):
                     rowData = []
                     for column in range(self.table.columnCount()):
-                        if column == 6:  # Include column
+                        if column == 7:  # Include column
                             item = self.table.cellWidget(row, column)
                             rowData.append('1' if item.isChecked() else '0')
                         else:
@@ -203,7 +207,7 @@ class SequencesWidget(QWidget):
         # TODO: map speed codes
         selected_sequences = []
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 6).isChecked():
+            if self.table.cellWidget(row, 7).isChecked():
                 sequence = {
                     'sequence_name': self.table.item(row, 0).text(),
                     'fluidic_port': self.table.item(row, 1).text(),
@@ -211,6 +215,7 @@ class SequencesWidget(QWidget):
                     'volume': self.table.item(row, 3).text(),
                     'incubation_time': self.table.item(row, 4).text(),
                     'repeat': int(self.table.item(row, 5).text()),
+                    'fill_tubing_with': int(self.table.item(row, 6).text()),
                 }
                 selected_sequences.append(sequence)
 
@@ -234,7 +239,7 @@ class SequencesWidget(QWidget):
     def updateProgress(self, message, percentage=None):
         if percentage is not None:
             self.progressBar.setValue(int(percentage))
-        QMessageBox.information(self, "Progress", message)
+        print(message)
 
     def showError(self, error_message):
         QMessageBox.critical(self, "Error", error_message)
@@ -244,9 +249,6 @@ class SequencesWidget(QWidget):
         self.abortButton.setEnabled(False)
         self.progressBar.setValue(0)
         QMessageBox.information(self, "Complete", "All selected sequences have been executed.")
-
-    def setExperimentOperations(self, experiment_ops):
-        self.experiment_ops = experiment_ops
 
 class ExperimentWorker(QThread):
     progress = pyqtSignal(str, int)
@@ -334,11 +336,11 @@ class ManualControlWidget(QWidget):
         leftLayout.addWidget(self.syringePortCombo, 0, 1)
 
         self.speedCombo = QComboBox()
-        for code in self.syringePump.SPEED_SEC.keys():
+        for code in range(len(self.syringePump.SPEED_SEC_MAPPING)):
             rate = self.syringePump.get_flow_rate(code)
-            self.speedCombo.addItem(f"{rate} μL/min", code)
+            self.speedCombo.addItem(f"{rate} mL/min", code)
         self.speedCombo.setCurrentIndex(40)  # Set default to code 40
-        leftLayout.addWidget(QLabel("Speed:"), 1, 0)
+        leftLayout.addWidget(QLabel("Speed:"), 1, 0)        # TODO: default speed, max speed
         leftLayout.addWidget(self.speedCombo, 1, 1)
 
         self.volumeSpinBox = QSpinBox()
@@ -390,7 +392,7 @@ class ManualControlWidget(QWidget):
     def openValve(self):
         simplified_port = int(self.valveCombo.currentText())
         utils.open_selector_valve_path(self.controller, self.config, simplified_port, self.simplified_to_actual)
-        QMessageBox.information(self, "Valve Opened", f"Opened valve path to simplified port {simplified_port}")
+        QMessageBox.information(self, "Valve Opened", f"Opened valve path to port {simplified_port}")
 
     def pushSyringe(self):
         self._operateSyringe("dispense")
@@ -477,7 +479,7 @@ class ManualControlWidget(QWidget):
         self.syringePortCombo.setEnabled(enabled)
         self.speedCombo.setEnabled(enabled)
         self.volumeSpinBox.setEnabled(enabled)
-        self.valveCombo.setEnabled(enabled)
+        #self.valveCombo.setEnabled(enabled)
 
     def updateProgress(self):
         if self.operation_start_time is None or self.operation_duration is None:
@@ -505,6 +507,7 @@ class FluidicsControlGUI(QMainWindow):
         super().__init__()
         self.config = utils.load_config()
         self.controller = FluidController(self.config['microcontroller']['serial_number'])
+        self.controller.begin()
 
         self.syringePump = SyringePump(
                             syringe_ul=self.config['syringe_pump']['volume_ul'], 

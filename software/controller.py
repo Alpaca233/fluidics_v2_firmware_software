@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from time import time
 
-SERIAL_NUMBER_DEBUGGING = '13995310'
+SERIAL_NUMBER_DEBUGGING = '11972480'
 
 def print_message(msg):
     '''
@@ -733,4 +733,19 @@ class FluidController(Microcontroller):
         tf = time() + dt
         while time() <= tf:
             self.get_mcu_status()
+        pass
+
+
+class FluidControllerSimulation():
+    def __init__(self, serial_number, use_cobs = True, log_measurements = False, debug = False):
+        return
+
+    def begin(self):
+        print("Simulated fluid controller.")
+        return
+
+    def send_command(self, command, *args):
+        pass
+
+    def send_command_blocking(self, command, *args):
         pass
