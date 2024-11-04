@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 import numpy as np
-from time import time
+from time import time, sleep
 
 SERIAL_NUMBER_DEBUGGING = '11972480'
 
@@ -742,10 +742,12 @@ class FluidControllerSimulation():
 
     def begin(self):
         print("Simulated fluid controller.")
-        return
 
     def send_command(self, command, *args):
-        pass
+        sleep(1)
 
     def send_command_blocking(self, command, *args):
+        sleep(2)
+
+    def wait_for_completion(self):
         pass

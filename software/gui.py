@@ -1,6 +1,8 @@
 import sys
 import csv
 import json
+import time
+import threading
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
@@ -9,11 +11,15 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
 from controller import FluidControllerSimulation as FluidController
 from syringe_pump import SyringePumpSimulation as SyringePump
+from selector_valve import SelectorValveSystem
 from merfish_operations import MERFISHOperations
-import utils
-import time
-import threading
-import pandas as pd
+from _def import CMD_SET
+#import pandas as pd
+
+
+def load_config(config_path='config.json'):
+    with open(config_path, 'r') as f:
+        return json.load(f)
 
 class SpinBoxDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -48,12 +54,12 @@ class PortDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
-        editor.addItems(map(str, self.ports))
+        editor.addItems(self.ports)
         return editor
 
     def setEditorData(self, comboBox, index):
         value = index.model().data(index, Qt.EditRole)
-        comboBox.setCurrentText(str(value))
+        comboBox.setCurrentText(value)
 
     def setModelData(self, comboBox, model, index):
         value = int(comboBox.currentText())
@@ -68,18 +74,17 @@ class PortDelegate(QStyledItemDelegate):
             self.parent().setIndexWidget(index, comboBox)
 
 class SequencesWidget(QWidget):
-    def __init__(self, config, controller, syringe):
+    def __init__(self, config, syringe, selector_valves):
         super().__init__()
         self.config = config
-        self.controller = controller
         self.syringePump = syringe
+        self.selectorValveSystem = selector_valves
         self.sequences = []
         self.experiment_ops = None  # Will be set based on the selected application
         self.worker = None
-        self.simplified_to_actual, self.actual_to_simplified = utils.create_port_mapping(config)
 
         if self.config['application'] == 'MERFISH':
-            self.experiment_ops = MERFISHOperations(self.controller, self.syringePump, self.config, self.simplified_to_actual)
+            self.experiment_ops = MERFISHOperations(self.config, self.selectorValveSystem, self.syringePump)
 
         self.initUI()
 
@@ -138,8 +143,8 @@ class SequencesWidget(QWidget):
             self.table.setItemDelegateForColumn(6, spinBoxDelegate)  # Fill Tubing With
 
             # Set up port delegate with simplified port numbers
-            simplified_ports = utils.get_simplified_ports(self.config)
-            portDelegate = PortDelegate(self.table, simplified_ports)
+            ports = self.selectorValveSystem.get_port_names()
+            portDelegate = PortDelegate(self.table, ports)
             self.table.setItemDelegateForColumn(1, portDelegate)  # Fluidic Port
 
         else:
@@ -197,11 +202,11 @@ class SequencesWidget(QWidget):
 
     def selectAll(self):
         for row in range(self.table.rowCount()):
-            self.table.cellWidget(row, 6).setChecked(True)
+            self.table.cellWidget(row, 7).setChecked(True)
 
     def selectNone(self):
         for row in range(self.table.rowCount()):
-            self.table.cellWidget(row, 6).setChecked(False)
+            self.table.cellWidget(row, 7).setChecked(False)
 
     def runSelectedSequences(self):
         # TODO: map speed codes
@@ -282,12 +287,11 @@ class ExperimentWorker(QThread):
             self.finished.emit()
 
 class ManualControlWidget(QWidget):
-    def __init__(self, config, controller, syringe):
+    def __init__(self, config, syringe, selector_valves):
         super().__init__()
         self.config = config
-        self.controller = controller
         self.syringePump = syringe
-        self.simplified_to_actual, self.actual_to_simplified = utils.create_port_mapping(config)
+        self.selectorValveSystem = selector_valves
 
         # Initialize timers
         self.progress_timer = QTimer(self)
@@ -311,9 +315,9 @@ class ManualControlWidget(QWidget):
         valveGroupBox = QGroupBox("Selector Valve Control")
         valveLayout = QHBoxLayout()
         valveLayout.setContentsMargins(5, 5, 5, 5)
-        valveLayout.addWidget(QLabel("Open Valve:"))
+        valveLayout.addWidget(QLabel("Source port:"))
         self.valveCombo = QComboBox()
-        self.valveCombo.addItems(map(str, utils.get_simplified_ports(self.config)))
+        self.valveCombo.addItems(self.selectorValveSystem.get_port_names())
         self.valveCombo.currentIndexChanged.connect(self.openValve)
         valveLayout.addWidget(self.valveCombo)
         valveGroupBox.setLayout(valveLayout)
@@ -336,7 +340,8 @@ class ManualControlWidget(QWidget):
         leftLayout.addWidget(self.syringePortCombo, 0, 1)
 
         self.speedCombo = QComboBox()
-        for code in range(len(self.syringePump.SPEED_SEC_MAPPING)):
+        speed_code_limit = self.config['syringe_pump']['speed_code_limit']
+        for code in range(speed_code_limit, len(self.syringePump.SPEED_SEC_MAPPING)):
             rate = self.syringePump.get_flow_rate(code)
             self.speedCombo.addItem(f"{rate} mL/min", code)
         self.speedCombo.setCurrentIndex(40)  # Set default to code 40
@@ -390,9 +395,9 @@ class ManualControlWidget(QWidget):
         self.updatePlungerPosition()
 
     def openValve(self):
-        simplified_port = int(self.valveCombo.currentText())
-        utils.open_selector_valve_path(self.controller, self.config, simplified_port, self.simplified_to_actual)
-        QMessageBox.information(self, "Valve Opened", f"Opened valve path to port {simplified_port}")
+        port = self.valveCombo.currentIndex() + 1
+        self.selectorValveSystem.open_port(port)
+        QMessageBox.information(self, "Port Opened", f"Port {port} opened")
 
     def pushSyringe(self):
         self._operateSyringe("dispense")
@@ -505,13 +510,16 @@ class ManualControlWidget(QWidget):
 class FluidicsControlGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.config = utils.load_config()
+        self.config = load_config()
         self.controller = FluidController(self.config['microcontroller']['serial_number'])
         self.controller.begin()
+        self.controller.send_command(CMD_SET.CLEAR)
 
         self.syringePump = SyringePump(
                             syringe_ul=self.config['syringe_pump']['volume_ul'], 
+                            speed_code_limit=self.config['syringe_pump']['speed_code_limit'],
                             waste_port=3)
+        self.selectorValveSystem = SelectorValveSystem(self.controller, self.config)
 
         self.initUI()
 
@@ -523,11 +531,11 @@ class FluidicsControlGUI(QMainWindow):
         tabWidget = QTabWidget()
         
         # "Run Experiments" tab
-        runExperimentsTab = SequencesWidget(self.config, self.controller, self.syringePump)
+        runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem)
         tabWidget.addTab(runExperimentsTab, "Run Experiments")
 
         # "Settings and Manual Control" tab
-        manualControlTab = ManualControlWidget(self.config, self.controller, self.syringePump)
+        manualControlTab = ManualControlWidget(self.config, self.syringePump, self.selectorValveSystem)
         tabWidget.addTab(manualControlTab, "Settings and Manual Control")
 
         self.setCentralWidget(tabWidget)

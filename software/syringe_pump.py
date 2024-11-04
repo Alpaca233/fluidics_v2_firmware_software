@@ -18,7 +18,7 @@ class SyringePump:
                         100.00, 120.00, 150.00, 200.00, 300.00, 333.33, 375.00, 428.57, 500.00, 600.00]
                         # Maps to speed code 0-40
 
-    def __init__(self, syringe_ul, waste_port=3, num_ports=4, slope=14):
+    def __init__(self, syringe_ul, speed_code_limit, waste_port=3, num_ports=4, slope=14):
         syringePumpAddr = tecancavro.transport.TecanAPISerial.findSerialPumps()
         print("Found syringe pump: ", syringePumpAddr)
         self.syringe = tecancavro.models.XCaliburD(com_link=tecancavro.TecanAPISerial(tecan_addr=0, ser_port=syringePumpAddr[0][0], ser_baud=9600), 
@@ -30,6 +30,7 @@ class SyringePump:
                             debug=False, 
                             debug_log_path='.')
         self.volume = syringe_ul
+        self.speed_code_limit = speed_code_limit
         self.range = 3000
 
         self.is_busy = False
@@ -89,6 +90,45 @@ class SyringePump:
     def get_flow_rate(self, speed_code):
         return round(self.volume * 60 / (self.SPEED_SEC_MAPPING[speed_code] * 1000), 2)
 
+    def flow_rate_to_speed_code(target_flow_rate, syringe_pump):
+        """
+        Map any flow rate to the closest speed code of the syringe pump
+        
+        :param flow_rate: ul/min
+        :param syringe_pump: SyringePump instance 
+        :return: speed code (int)
+        """
+        target_time = syringe_pump.volume * 60 / target_flow_rate
+
+        left = 0
+        right = len(syringe_pump.SPEED_SEC_MAPPING) - 1
+        
+        # If target is beyond the range, return the closest endpoint
+        if target_time <= syringe_pump.SPEED_SEC_MAPPING[self.speed_code_limit]:
+            return self.speed_code_limit
+        if target_time >= syringe_pump.SPEED_SEC_MAPPING[-1]:
+            return len(syringe_pump.SPEED_SEC_MAPPING) - 1
+            
+        # Binary search
+        while left < right:
+            if right - left == 1:
+                if abs(syringe_pump.SPEED_SEC_MAPPING[left] - target_time) <= abs(syringe_pump.SPEED_SEC_MAPPING[right] - target_time):
+                    return left
+                return right
+                
+            mid = (left + right) // 2
+            mid_value = syringe_pump.SPEED_SEC_MAPPING[mid]
+            
+            if mid_value == target_time:
+                return mid
+            elif mid_value > target_time:
+                right = mid
+            else:
+                left = mid
+        
+
+        return left
+
     def close(self):
         self.plunger_position_updating_event.set()
 
@@ -108,7 +148,7 @@ class SyringePumpSimulation():
                         100.00, 120.00, 150.00, 200.00, 300.00, 333.33, 375.00, 428.57, 500.00, 600.00]
                         # Maps to speed code 0-40
 
-    def __init__(self, syringe_ul, waste_port, num_ports=4, slope=14):
+    def __init__(self, syringe_ul, speed_code_limit, waste_port, num_ports=4, slope=14):
         self.syringe = None
         self.volume = syringe_ul
         self.range = 3000
@@ -154,6 +194,9 @@ class SyringePumpSimulation():
 
     def get_flow_rate(self, speed_code):
         return round(self.volume * 60 / (self.SPEED_SEC_MAPPING[speed_code] * 1000), 2)
+
+    def flow_rate_to_speed_code(target_flow_rate, syringe_pump):
+        return 20
 
     def close(self):
         pass

@@ -1,9 +1,8 @@
 class ExperimentOperations:
-    def __init__(self, fluid_controller, syringe_pump, config, mapping):
-        self.fc = fluid_controller
+    def __init__(self, config, syringe_pump, selector_valves, disc_pump=None):
         self.sp = syringe_pump
+        self.sv = selector_valves
         self.config = config
-        self.simplified_to_actual = mapping
         self.progress_callback = None
         self.error_callback = None
         self.abort_requested = False

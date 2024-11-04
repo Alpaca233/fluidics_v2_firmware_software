@@ -1,10 +1,9 @@
 from experiment_operations import ExperimentOperations, AbortRequested
 from time import sleep
-import utils
 
 class MERFISHOperations(ExperimentOperations):
-    def __init__(self, fluid_controller, syringe_pump, config, mapping):
-        super().__init__(fluid_controller, syringe_pump, config, mapping)
+    def __init__(self, config, syringe_pump, selector_valves):
+        super().__init__(config, syringe_pump, selector_valves)
 
     def run_sequence(self, sequence):
         print(sequence)
@@ -14,6 +13,7 @@ class MERFISHOperations(ExperimentOperations):
             flow_rate = int(sequence['flow_rate'])
             volume = int(sequence['volume'])
             incubation_time = int(sequence['incubation_time'])
+            fill_tubing_with = sequence['fill_tubing_with']
 
             if sequence_name == "Flow Bleaching Buffer":
                 self.flow_bleaching_buffer(port, flow_rate, volume)
@@ -37,27 +37,34 @@ class MERFISHOperations(ExperimentOperations):
             progress = (i + 1) / total_time * 100
             self.update_progress(f"{progress_prefix}: {i+1}/{total_time} seconds", progress)
 
-    def flow_bleaching_buffer(self, port, flow_rate, volume, incubation_time):
+
+    def flow_bleaching_buffer(self, port, flow_rate, volume, incubation_time, fill_tubing_with_port):
         self.update_progress(f"Running Flow Bleaching Buffer: port={port}, flow_rate={flow_rate}, volume={volume}")
         speed_code = utils.flow_rate_to_speed_code(flow_rate, self.sp)
         try:
-            self.execute_command(utils.open_selector_valve_path, self.fc, self.config, port, self.simplified_to_actual)
+            self.execute_command(self.sv.open_port, port)
             self.execute_command(self.sp.extract, 1, volume, speed_code)
             self.incubate(incubation_time, "Bleaching")
+            if fill_tubing_with_port is not None:
+                self.execute_command(self.sv.open_port, int(fill_tubing_with_port))
+                self.execute_command(self.sp.extract, 1, self.sv.get_tubing_fluid_amount(fill_tubing_with_port))
             
             self.update_progress("Flow Bleaching Buffer complete", 100)
         except:
             self.report_error(f"Error in Flow Bleaching Buffer: {str(e)}")
 
-    def hybridize(self, port, flow_rate, volume, incubation_time):
+    def hybridize(self, port, flow_rate, volume, incubation_time, fill_tubing_with_port):
         self.update_progress(f"Running Hybridize: port={port}, flow_rate={flow_rate}, volume={volume}, incubation_time={incubation_time}")
-        speed_code = utils.flow_rate_to_speed_code(flow_rate, self.sp)
+        speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
         print(speed_code)
         try:
-            self.execute_command(self.sp.dispense, 3, volume, speed_code)
-            self.execute_command(utils.open_selector_valve_path, self.fc, self.config, port, self.simplified_to_actual)
+            self.execute_command(self.sp.dispense, 3, volume, 10)
+            self.execute_command(self.sv, port)
             self.execute_command(self.sp.extract, 1, volume, speed_code)
             self.incubate(incubation_time, "Hybridizing")
+            if fill_tubing_with_port is not None:
+                self.execute_command(self.sv.open_port, int(fill_tubing_with_port))
+                self.execute_command(self.sp.extract, 1, self.sv.get_tubing_fluid_amount(fill_tubing_with_port))
 
             self.update_progress("Hybridize complete", 100)
         except SyringePumpError as e:
