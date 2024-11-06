@@ -9,8 +9,8 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar,
                              QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
-from controller import FluidControllerSimulation as FluidController
-from syringe_pump import SyringePumpSimulation as SyringePump
+from controller import FluidController as FluidController
+from syringe_pump import SyringePump as SyringePump
 from selector_valve import SelectorValveSystem
 from merfish_operations import MERFISHOperations
 from _def import CMD_SET
@@ -84,7 +84,7 @@ class SequencesWidget(QWidget):
         self.worker = None
 
         if self.config['application'] == 'MERFISH':
-            self.experiment_ops = MERFISHOperations(self.config, self.selectorValveSystem, self.syringePump)
+            self.experiment_ops = MERFISHOperations(self.config, self.syringePump, self.selectorValveSystem)
 
         self.initUI()
 
@@ -366,6 +366,7 @@ class ManualControlWidget(QWidget):
         topLayout.addWidget(leftWidget, 3)
 
         # Right side - Plunger position
+        # TODO: stop updating position when not on this tab
         rightWidget = QWidget()
         rightLayout = QVBoxLayout(rightWidget)
         self.plungerPositionLabel = QLabel("Plunger Position (μL)")
@@ -419,6 +420,7 @@ class ManualControlWidget(QWidget):
             self.setControlsEnabled(False)
 
             # Start operation
+            self.syringePump.reset_chain()
             if action == "dispense":
                 exec_time = self.syringePump.dispense(syringe_port, volume, speed_code)
             else:

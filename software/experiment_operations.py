@@ -32,10 +32,12 @@ class ExperimentOperations:
         return False
 
     def execute_command(self, command, *args, **kwargs):
-        result = command(*args, **kwargs)
+        command(*args, **kwargs)
         if self.check_abort():
+            #self.sp.stop()
             raise AbortRequested("Operation aborted by user")
-        return result
+
+    # TODO: pause
 
 class AbortRequested(Exception):
     pass

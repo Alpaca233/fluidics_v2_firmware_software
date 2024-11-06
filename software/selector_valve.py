@@ -8,6 +8,7 @@ class SelectorValve():
         self.position = 1
         self.tubing_fluid_amount = config['selector_valves']['tubing_fluid_amount_ul'][str(valve_id)]	# ul
         self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, SelectorValveSystem.PORTS_PER_VALVE)
+        self.open(self.position)
         print(f"Selector valve id = {valve_id} initialized.")
 
     def open(self, port):
