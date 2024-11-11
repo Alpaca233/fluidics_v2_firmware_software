@@ -398,7 +398,6 @@ class ManualControlWidget(QWidget):
     def openValve(self):
         port = self.valveCombo.currentIndex() + 1
         self.selectorValveSystem.open_port(port)
-        QMessageBox.information(self, "Port Opened", f"Port {port} opened")
 
     def pushSyringe(self):
         self._operateSyringe("dispense")

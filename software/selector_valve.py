@@ -45,8 +45,7 @@ class SelectorValveSystem():
 
         for i in range(target_valve):
             self.valves[i].open(target_port)
-
-        self.fc.wait_for_completion()
+            self.fc.wait_for_completion()
 
     def get_tubing_fluid_amount(self, port_index):
         target_valve = ((port_index - 1) // (self.PORTS_PER_VALVE - 1))
