@@ -135,7 +135,7 @@ class SyringePumpSimulation():
                         100.00, 120.00, 150.00, 200.00, 300.00, 333.33, 375.00, 428.57, 500.00, 600.00]
                         # Maps to speed code 0-40
 
-    def __init__(self, syringe_ul, speed_code_limit, waste_port, num_ports=4, slope=14):
+    def __init__(self, sn, syringe_ul, speed_code_limit, waste_port, num_ports=4, slope=14):
         self.syringe = None
         self.volume = syringe_ul
         self.range = 3000

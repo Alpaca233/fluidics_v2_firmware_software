@@ -70,7 +70,7 @@ class PortDelegate(QStyledItemDelegate):
             comboBox = QComboBox(self.parent())
             comboBox.addItems(map(str, self.ports))
             comboBox.setCurrentText(str(index.data()))
-            comboBox.currentTextChanged.connect(lambda text: self.parent().model().setData(index, int(text), Qt.EditRole))
+            comboBox.currentTextChanged.connect(lambda text: self.parent().model().setData(index, text, Qt.EditRole))
             self.parent().setIndexWidget(index, comboBox)
 
 class SequencesWidget(QWidget):
@@ -144,8 +144,8 @@ class SequencesWidget(QWidget):
 
             # Set up port delegate with simplified port numbers
             ports = self.selectorValveSystem.get_port_names()
-            portDelegate = PortDelegate(self.table, ports)
-            self.table.setItemDelegateForColumn(1, portDelegate)  # Fluidic Port
+            self.portDelegate = PortDelegate(self.table, ports)
+            self.table.setItemDelegateForColumn(1, self.portDelegate)  # Fluidic Port
 
         else:
             # Default setup or other applications
@@ -163,7 +163,7 @@ class SequencesWidget(QWidget):
                     rowPosition = self.table.rowCount()
                     self.table.insertRow(rowPosition)
                     self.table.setItem(rowPosition, 0, QTableWidgetItem(row['sequence_name']))
-                    self.table.setItem(rowPosition, 1, QTableWidgetItem(row['fluidic_port']))
+                    self.table.setItem(rowPosition, 1, QTableWidgetItem(self.portDelegate.ports[int(row['fluidic_port']) - 1]))
                     self.table.setItem(rowPosition, 2, QTableWidgetItem(row['flow_rate']))
                     self.table.setItem(rowPosition, 3, QTableWidgetItem(row['volume']))
                     self.table.setItem(rowPosition, 4, QTableWidgetItem(row['incubation_time']))
@@ -180,6 +180,8 @@ class SequencesWidget(QWidget):
     def saveCSV(self):
         fileName, _ = QFileDialog.getSaveFileName(self, "Save CSV", "", "CSV Files (*.csv)")
         if fileName:
+            if not fileName.lower().endswith('.csv'):
+                fileName += '.csv'
             with open(fileName, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(["sequence_name", "fluidic_port", "flow_rate", "volume", "incubation_time", "repeat", "fill_tubing_with", "include"])
@@ -193,7 +195,7 @@ class SequencesWidget(QWidget):
                             item = self.table.indexWidget(self.table.model().index(row, column))
                             if item:
                                 if isinstance(item, QComboBox):
-                                    rowData.append(item.currentText())
+                                    rowData.append(item.currentIndex() + 1)
                                 elif isinstance(item, QSpinBox):
                                     rowData.append(str(item.value()))
                             else:
@@ -253,7 +255,7 @@ class SequencesWidget(QWidget):
         self.runButton.setEnabled(True)
         self.abortButton.setEnabled(False)
         self.progressBar.setValue(0)
-        QMessageBox.information(self, "Complete", "All selected sequences have been executed.")
+        #QMessageBox.information(self, "Complete", "All selected sequences have been executed.")
 
 class ExperimentWorker(QThread):
     progress = pyqtSignal(str, int)
