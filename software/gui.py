@@ -475,6 +475,7 @@ class ManualControlWidget(QWidget):
     @pyqtSlot(str)
     def handleError(self, error_message):
         QMessageBox.critical(self, "Error", f"Syringe pump error: {error_message}")
+        self.syringePump.wait_for_stop()
         self.setControlsEnabled(True)
         self.progress_timer.stop()
         self.syringeProgressBar.setValue(0)
@@ -503,7 +504,6 @@ class ManualControlWidget(QWidget):
             print(f"Error updating plunger position: {str(e)}")
 
     def closeEvent(self, event):
-        self.syringePump.close()
         self.progress_timer.stop()
         self.position_timer.stop()
         super().closeEvent(event)
@@ -541,6 +541,10 @@ class FluidicsControlGUI(QMainWindow):
         tabWidget.addTab(manualControlTab, "Settings and Manual Control")
 
         self.setCentralWidget(tabWidget)
+
+    def closeEvent(self, event):
+        self.syringePump.close()
+        super().closeEvent(event)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

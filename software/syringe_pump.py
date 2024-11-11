@@ -15,9 +15,10 @@ class SyringePump:
             for d in list_ports.comports():
                 if d.serial_number == sn:
                     self.port = d.device
+                    self.com_link = tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600)
                     print("Syringe pump found.")
                     break
-        self.syringe = tecancavro.models.XCaliburD(com_link=tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600), 
+        self.syringe = tecancavro.models.XCaliburD(com_link=self.com_link, 
                             num_ports=num_ports,
                             syringe_ul=syringe_ul, 
                             microstep=False, 
@@ -97,33 +98,34 @@ class SyringePump:
 
         left = 0
         right = len(self.SPEED_SEC_MAPPING) - 1
-        
+
         # If target is beyond the range, return the closest endpoint
         if target_time <= self.SPEED_SEC_MAPPING[self.speed_code_limit]:
             return self.speed_code_limit
         if target_time >= self.SPEED_SEC_MAPPING[-1]:
             return len(self.SPEED_SEC_MAPPING) - 1
-            
+
         # Binary search
         while left < right:
             if right - left == 1:
                 if abs(self.SPEED_SEC_MAPPING[left] - target_time) <= abs(self.SPEED_SEC_MAPPING[right] - target_time):
                     return left
                 return right
-                
+
             mid = (left + right) // 2
             mid_value = self.SPEED_SEC_MAPPING[mid]
-            
+
             if mid_value == target_time:
                 return mid
             elif mid_value > target_time:
                 right = mid
             else:
                 left = mid
-        
 
         return left
 
+    def close(self):
+        del self.com_link
 
 class SyringePumpSimulation():
     SPEED_SEC_MAPPING = [1.25, 1.30, 1.39, 1.52, 1.71, 1.97, 2.37, 2.77, 3.03, 3.36, 3.77, 
@@ -181,3 +183,6 @@ class SyringePumpSimulation():
 
     def flow_rate_to_speed_code(self, target_flow_rate):
         return 20
+
+    def close(self):
+        pass
