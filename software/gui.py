@@ -518,6 +518,7 @@ class FluidicsControlGUI(QMainWindow):
         self.controller.send_command(CMD_SET.CLEAR)
 
         self.syringePump = SyringePump(
+                            sn=self.config['syringe_pump']['serial_number'],
                             syringe_ul=self.config['syringe_pump']['volume_ul'], 
                             speed_code_limit=self.config['syringe_pump']['speed_code_limit'],
                             waste_port=3)

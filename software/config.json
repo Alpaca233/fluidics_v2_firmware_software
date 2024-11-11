@@ -3,6 +3,7 @@
     "serial_number": "11972480"
   },
   "syringe_pump": {
+    "serial_number": "CRCOb13BN11", 
     "volume_ul": 5000,
     "ports_allowed": [1, 2, 3],
     "speed_code_limit": 10

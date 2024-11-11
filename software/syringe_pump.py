@@ -1,6 +1,7 @@
 import tecancavro
 import time
 import threading
+from serial.tools import list_ports
 
 class SyringePump:
     SPEED_SEC_MAPPING = [1.25, 1.30, 1.39, 1.52, 1.71, 1.97, 2.37, 2.77, 3.03, 3.36, 3.77, 
@@ -9,10 +10,14 @@ class SyringePump:
                         100.00, 120.00, 150.00, 200.00, 300.00, 333.33, 375.00, 428.57, 500.00, 600.00]
                         # Maps to speed code 0-40
 
-    def __init__(self, syringe_ul, speed_code_limit, waste_port=3, num_ports=4, slope=14):
-        syringePumpAddr = tecancavro.transport.TecanAPISerial.findSerialPumps()
-        print("Found syringe pump: ", syringePumpAddr)
-        self.syringe = tecancavro.models.XCaliburD(com_link=tecancavro.TecanAPISerial(tecan_addr=0, ser_port=syringePumpAddr[0][0], ser_baud=9600), 
+    def __init__(self, sn, syringe_ul, speed_code_limit, waste_port=3, num_ports=4, slope=14):
+        if sn is not None:
+            for d in list_ports.comports():
+                if d.serial_number == sn:
+                    self.port = d.device
+                    print("Syringe pump found.")
+                    break
+        self.syringe = tecancavro.models.XCaliburD(com_link=tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600), 
                             num_ports=num_ports,
                             syringe_ul=syringe_ul, 
                             microstep=False, 
