@@ -255,6 +255,12 @@ class SequencesWidget(QWidget):
         self.runButton.setEnabled(True)
         self.abortButton.setEnabled(False)
         self.progressBar.setValue(0)
+        if self.worker:
+            self.worker.quit()
+            self.worker.wait()
+            self.worker = None
+        if self.experiment_ops:
+            self.experiment_ops.abort_requested = False
         #QMessageBox.information(self, "Complete", "All selected sequences have been executed.")
 
 class ExperimentWorker(QThread):
