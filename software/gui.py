@@ -463,10 +463,6 @@ class ManualControlWidget(QWidget):
     @pyqtSlot()
     def operationComplete(self):
         self.progress_timer.stop()
-        while True:
-            if not self.syringePump.is_busy:
-                break
-            time.sleep(0.05)
         self.syringeProgressBar.setValue(100)
         self.setControlsEnabled(True)
         self.operation_start_time = None

@@ -52,6 +52,7 @@ class SyringePump:
         t = self.syringe.executeChain()
         if block_pump:
             self.syringe.waitReady()
+            self.is_busy = False
         else:
             self.wait_for_stop(t)
 
