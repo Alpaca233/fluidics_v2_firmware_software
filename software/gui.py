@@ -217,7 +217,7 @@ class SequencesWidget(QWidget):
             if self.table.cellWidget(row, 7).isChecked():
                 sequence = {
                     'sequence_name': self.table.item(row, 0).text(),
-                    'fluidic_port': self.table.item(row, 1).text(),
+                    'fluidic_port': (self.table.cellWidget(row, 1).currentIndex() + 1),
                     'flow_rate': self.table.item(row, 2).text(),
                     'volume': self.table.item(row, 3).text(),
                     'incubation_time': self.table.item(row, 4).text(),
@@ -249,7 +249,7 @@ class SequencesWidget(QWidget):
         print(message)
 
     def showError(self, error_message):
-        QMessageBox.critical(self, "Error", error_message)
+        pass
 
     def onWorkerFinished(self):
         self.runButton.setEnabled(True)
