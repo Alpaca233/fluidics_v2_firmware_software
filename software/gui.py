@@ -313,8 +313,6 @@ class ManualControlWidget(QWidget):
 
         self.initUI()
 
-        self.plunger_timer.start(500)
-
     def initUI(self):
         mainLayout = QVBoxLayout()
         mainLayout.setSpacing(10)
@@ -352,7 +350,7 @@ class ManualControlWidget(QWidget):
         for code in range(speed_code_limit, len(self.syringePump.SPEED_SEC_MAPPING)):
             rate = self.syringePump.get_flow_rate(code)
             self.speedCombo.addItem(f"{rate} mL/min", code)
-        self.speedCombo.setCurrentIndex(40)  # Set default to code 40
+        self.speedCombo.setCurrentIndex(40 - self.config['syringe_pump']['speed_code_limit'])  # Set default to code 40
         leftLayout.addWidget(QLabel("Speed:"), 1, 0)        # TODO: default speed, max speed
         leftLayout.addWidget(self.speedCombo, 1, 1)
 
@@ -506,6 +504,16 @@ class ManualControlWidget(QWidget):
             self.plungerPositionBar.setValue(int(position))
         except Exception as e:
             print(f"Error updating plunger position: {str(e)}")
+
+    def showEvent(self, event):
+        # Start timer when widget becomes visible
+        super().showEvent(event)
+        self.plunger_timer.start(500)
+
+    def hideEvent(self, event):
+        # Stop timer when widget becomes hidden
+        super().hideEvent(event)
+        self.plunger_timer.stop()
 
     def closeEvent(self, event):
         self.progress_timer.stop()
