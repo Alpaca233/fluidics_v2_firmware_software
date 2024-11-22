@@ -60,12 +60,12 @@ class MERFISHOperations(ExperimentOperations):
 
             self.sv.open_port(port)
             self.sp.reset_chain()
-            self.sp.extract(1, volume, speed_code)
+            self.sp.extract(2, volume, speed_code)
             self.execute_command(self.sp.execute)
             self.incubate(incubation_time, "Bleaching")
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
-                self.sp.extract(1, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
+                self.sp.extract(2, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
                 self.execute_command(self.sp.execute)
             
             self.update_progress("Flow Bleaching Buffer complete", 100)
@@ -80,12 +80,12 @@ class MERFISHOperations(ExperimentOperations):
             self.sp.dispense_to_waste(10)
             self.execute_command(self.sp.execute)
             self.sv.open_port(port)
-            self.sp.extract(1, volume, speed_code)
+            self.sp.extract(2, volume, speed_code)
             self.execute_command(self.sp.execute)
             self.incubate(incubation_time, "Hybridizing")
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
-                self.sp.extract(1, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
+                self.sp.extract(2, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
                 self.execute_command(self.sp.execute)
 
             self.update_progress("Hybridize complete", 100)
@@ -100,12 +100,12 @@ class MERFISHOperations(ExperimentOperations):
             self.sp.dispense_to_waste(10)
             self.execute_command(self.sp.execute)
             self.sv.open_port(port)
-            self.sp.extract(1, volume, speed_code)
+            self.sp.extract(2, volume, speed_code)
             self.execute_command(self.sp.execute)
             self.incubate(incubation_time, "Wash Buffer")
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
-                self.sp.extract(1, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
+                self.sp.extract(2, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
                 self.execute_command(self.sp.execute)
 
             self.update_progress("Flow Wash Buffer complete", 100)
@@ -120,12 +120,12 @@ class MERFISHOperations(ExperimentOperations):
             self.sp.dispense_to_waste(10)
             self.execute_command(self.sp.execute)
             self.sv.open_port(port)
-            self.sp.extract(1, volume, speed_code)
+            self.sp.extract(2, volume, speed_code)
             self.execute_command(self.sp.execute)
             self.incubate(incubation_time, "Imaging Buffer")
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
-                self.sp.extract(1, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
+                self.sp.extract(2, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
                 self.execute_command(self.sp.execute)
 
             self.update_progress("Flow Imaging Buffer complete", 100)
@@ -140,7 +140,7 @@ class MERFISHOperations(ExperimentOperations):
             self.sp.dispense_to_waste(10)
             self.execute_command(self.sp.execute)
             self.sv.open_port(port)
-            self.sp.extract(1, volume, speed_code)
+            self.sp.extract(2, volume, speed_code)
             self.execute_command(self.sp.execute)
 
             self.update_progress("Clean Up complete", 100)
