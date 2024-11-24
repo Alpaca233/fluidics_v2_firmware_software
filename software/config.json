@@ -1,19 +1,19 @@
 {
   "microcontroller": {
-    "serial_number": "11972480"
+    "serial_number": "15579610"
   },
   "syringe_pump": {
-    "serial_number": "CRCOb13BN11", 
+    "serial_number": "A9TLZRF2", 
     "volume_ul": 5000,
     "ports_allowed": [1, 2, 3],
     "speed_code_limit": 10
   },
   "selector_valves": {
-    "valve_ids_allowed": [0, 1, 2],
+    "valve_ids_allowed": [0, 1],
     "tubing_fluid_amount_ul": {
-      "0": 100,
-      "1": 110,
-      "2": 120,
+      "0": 530,
+      "1": 770,
+      "2": null,
       "3": null
     },
     "reagent_name_mapping": {

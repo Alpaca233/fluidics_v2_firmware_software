@@ -2,16 +2,17 @@ from controller import FluidControllerSimulation as FluidController
 from _def import CMD_SET
 
 class SelectorValve():
-    def __init__(self, fluid_controller, config, valve_id):
+    def __init__(self, fluid_controller, config, valve_id, initial_pos=1):
         self.fc = fluid_controller
         self.id = valve_id
-        self.position = 1
+        self.position = initial_pos
         self.tubing_fluid_amount = config['selector_valves']['tubing_fluid_amount_ul'][str(valve_id)]	# ul
         self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, SelectorValveSystem.PORTS_PER_VALVE)
         self.open(self.position)
         print(f"Selector valve id = {valve_id} initialized.")
 
     def open(self, port):
+        print("open", self.id, port)
         self.fc.send_command(CMD_SET.SET_ROTARY_VALVE, self.id, port)
         self.position = port
 
@@ -23,8 +24,10 @@ class SelectorValveSystem():
         self.fc = fluid_controller
         self.config = config
         self.valves = [None] * len(self.config['selector_valves']['valve_ids_allowed'])
-        for i in self.config['selector_valves']['valve_ids_allowed']:
-            self.valves[i] = SelectorValve(self.fc, self.config, i)
+        sv = sorted(self.config['selector_valves']['valve_ids_allowed'])
+        for i in sv[:-1]:
+            self.valves[i] = SelectorValve(self.fc, self.config, i, self.PORTS_PER_VALVE)
+        self.valves[sv[-1]] = SelectorValve(self.fc, self.config, sv[-1], 1)
         self.available_port_number = (self.PORTS_PER_VALVE - 1) * len(self.valves) + 1
 
     def port_to_reagent(self, port_index):
@@ -42,9 +45,10 @@ class SelectorValveSystem():
             target_port = (port_index - 1) % (self.PORTS_PER_VALVE - 1) + 1
 
         self.valves[target_valve].open(target_port)
+        self.fc.wait_for_completion()
 
         for i in range(target_valve):
-            self.valves[i].open(target_port)
+            self.valves[i].open(10)
             self.fc.wait_for_completion()
 
     def get_tubing_fluid_amount(self, port_index):
