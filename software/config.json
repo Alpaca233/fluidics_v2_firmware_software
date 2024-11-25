@@ -10,12 +10,7 @@
   },
   "selector_valves": {
     "valve_ids_allowed": [0, 1],
-    "tubing_fluid_amount_ul": {
-      "0": 530,
-      "1": 770,
-      "2": null,
-      "3": null
-    },
+    "tubing_fluid_amount_ul": 730,
     "reagent_name_mapping": {
       "port_1": "reagent x",
       "port_2": "y",

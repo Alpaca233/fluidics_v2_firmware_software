@@ -6,7 +6,6 @@ class SelectorValve():
         self.fc = fluid_controller
         self.id = valve_id
         self.position = initial_pos
-        self.tubing_fluid_amount = config['selector_valves']['tubing_fluid_amount_ul'][str(valve_id)]	# ul
         self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, SelectorValveSystem.PORTS_PER_VALVE)
         self.open(self.position)
         print(f"Selector valve id = {valve_id} initialized.")
@@ -52,6 +51,7 @@ class SelectorValveSystem():
             self.fc.wait_for_completion()
 
     def get_tubing_fluid_amount(self, port_index):
+        '''
         target_valve = ((port_index - 1) // (self.PORTS_PER_VALVE - 1))
         if target_valve == len(self.valves):
             target_valve -= 1
@@ -59,8 +59,8 @@ class SelectorValveSystem():
         total_amount = 0 	# ul
         for i in range(target_valve + 1):
             total_amount += self.valves[i].tubing_fluid_amount
-
-        return total_amount
+        '''
+        return self.config['selector_valves']['tubing_fluid_amount_ul']
 
     def get_port_names(self):
         names = []

@@ -351,7 +351,7 @@ class ManualControlWidget(QWidget):
             rate = self.syringePump.get_flow_rate(code)
             self.speedCombo.addItem(f"{rate} mL/min", code)
         self.speedCombo.setCurrentIndex(40 - self.config['syringe_pump']['speed_code_limit'])  # Set default to code 40
-        leftLayout.addWidget(QLabel("Speed:"), 1, 0)        # TODO: default speed, max speed
+        leftLayout.addWidget(QLabel("Speed:"), 1, 0)
         leftLayout.addWidget(self.speedCombo, 1, 1)
 
         self.volumeSpinBox = QSpinBox()
@@ -476,7 +476,9 @@ class ManualControlWidget(QWidget):
 
     @pyqtSlot(str)
     def handleError(self, error_message):
-        QMessageBox.critical(self, "Error", f"Syringe pump error: {error_message}")
+        if error_message[:48] != "Tecan serial communication exceeded max attempts":
+            QMessageBox.critical(self, "Error", f"Syringe pump error: {error_message}")
+        print()
         self.syringePump.wait_for_stop()
         self.setControlsEnabled(True)
         self.progress_timer.stop()
@@ -502,8 +504,8 @@ class ManualControlWidget(QWidget):
         try:
             position = self.syringePump.get_plunger_position() * self.config['syringe_pump']['volume_ul']
             self.plungerPositionBar.setValue(int(position))
-        except Exception as e:
-            print(f"Error updating plunger position: {str(e)}")
+        except Exception:
+            pass
 
     def showEvent(self, event):
         # Start timer when widget becomes visible

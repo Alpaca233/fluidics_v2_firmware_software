@@ -82,11 +82,11 @@ class MERFISHOperations(ExperimentOperations):
             self.sv.open_port(port)
             self.sp.extract(2, volume, speed_code)
             self.execute_command(self.sp.execute)
-            self.incubate(incubation_time, "Hybridizing")
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
                 self.sp.extract(2, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
                 self.execute_command(self.sp.execute)
+            self.incubate(incubation_time, "Hybridizing")
 
             self.update_progress("Hybridize complete", 100)
         except SyringePumpError as e:
