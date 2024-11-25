@@ -307,6 +307,8 @@ class FluidController(Microcontroller):
                 print(line)
                 pass
 
+        # this block of code should only be used when get_mcu_status is executed at fixed interval (< 1s)
+        '''
         # Check for mismatch between received command and transmitted command
         if (MCU_received_command != self.cmd_sent) or (MCU_received_command_UID != self.cmd_uid):
             if self.timestamp_last_mismatch is None:
@@ -318,6 +320,7 @@ class FluidController(Microcontroller):
                 print((MCU_received_command_UID, self.cmd_uid))
         else:
             self.timestamp_last_mismatch = None
+        '''
 
         # Load latest data into a shared dict
         self.recorded_data = {
