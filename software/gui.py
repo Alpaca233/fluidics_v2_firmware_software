@@ -6,20 +6,24 @@ import threading
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
-                             QStyledItemDelegate, QSpinBox, QLabel, QProgressBar,
+                             QStyledItemDelegate, QSpinBox, QLabel, QProgressBar, QLineEdit, 
                              QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
 from controller import FluidController as FluidController
 from syringe_pump import SyringePump as SyringePump
 from selector_valve import SelectorValveSystem
-from merfish_operations import MERFISHOperations
 from _def import CMD_SET
 #import pandas as pd
-
 
 def load_config(config_path='config.json'):
     with open(config_path, 'r') as f:
         return json.load(f)
+
+if load_config()['application'] == "MERFISH":
+    from merfish_operations import MERFISHOperations
+elif load_config()['application'] == "Open Chamber":
+    from open_chamber_operations import OpenChamberOperations
+    from disc_pump import DiscPump
 
 class SpinBoxDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -74,17 +78,20 @@ class PortDelegate(QStyledItemDelegate):
             self.parent().setIndexWidget(index, comboBox)
 
 class SequencesWidget(QWidget):
-    def __init__(self, config, syringe, selector_valves):
+    def __init__(self, config, syringe, selector_valves, disc_pump):
         super().__init__()
         self.config = config
         self.syringePump = syringe
         self.selectorValveSystem = selector_valves
+        self.discPump = disc_pump
         self.sequences = []
         self.experiment_ops = None  # Will be set based on the selected application
         self.worker = None
 
         if self.config['application'] == 'MERFISH':
             self.experiment_ops = MERFISHOperations(self.config, self.syringePump, self.selectorValveSystem)
+        elif self.config['application'] == "Open Chamber":
+            self.experiment_ops = OpenChamberOperations(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
 
         self.initUI()
 
@@ -129,27 +136,23 @@ class SequencesWidget(QWidget):
         self.setLayout(layout)
 
     def setupTable(self):
-        if self.config['application'] == "MERFISH":
-            self.table.setColumnCount(8)
-            self.table.setHorizontalHeaderLabels(["Sequence Name", "Fluidic Port", "Flow Rate (μL/min)", 
-                                                  "Volume (μL)", "Incubation Time (min)", "Repeat", "Fill Tubing With", "Include"])
-            
-            # Set up delegates
-            spinBoxDelegate = SpinBoxDelegate(self.table)
-            self.table.setItemDelegateForColumn(2, spinBoxDelegate)  # Flow Rate
-            self.table.setItemDelegateForColumn(3, spinBoxDelegate)  # Volume
-            self.table.setItemDelegateForColumn(4, spinBoxDelegate)  # Incubation Time
-            self.table.setItemDelegateForColumn(5, spinBoxDelegate)  # Repeat
-            self.table.setItemDelegateForColumn(6, spinBoxDelegate)  # Fill Tubing With
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels(["Sequence Name", "Fluidic Port", "Flow Rate (μL/min)", 
+                                              "Volume (μL)", "Incubation Time (min)", "Repeat", "Fill Tubing With", "Include"])
+        
+        # Set up delegates
+        spinBoxDelegate = SpinBoxDelegate(self.table)
+        self.table.setItemDelegateForColumn(2, spinBoxDelegate)  # Flow Rate
+        self.table.setItemDelegateForColumn(3, spinBoxDelegate)  # Volume
+        self.table.setItemDelegateForColumn(4, spinBoxDelegate)  # Incubation Time
+        self.table.setItemDelegateForColumn(5, spinBoxDelegate)  # Repeat
+        self.table.setItemDelegateForColumn(6, spinBoxDelegate)  # Fill Tubing With
 
-            # Set up port delegate with simplified port numbers
-            ports = self.selectorValveSystem.get_port_names()
-            self.portDelegate = PortDelegate(self.table, ports)
-            self.table.setItemDelegateForColumn(1, self.portDelegate)  # Fluidic Port
+        # Set up port delegate with simplified port numbers
+        ports = self.selectorValveSystem.get_port_names()
+        self.portDelegate = PortDelegate(self.table, ports)
+        self.table.setItemDelegateForColumn(1, self.portDelegate)  # Fluidic Port
 
-        else:
-            # Default setup or other applications
-            pass
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
     def loadCSV(self):
@@ -295,11 +298,12 @@ class ExperimentWorker(QThread):
             self.finished.emit()
 
 class ManualControlWidget(QWidget):
-    def __init__(self, config, syringe, selector_valves):
+    def __init__(self, config, syringe, selector_valves, disc_pump=None):
         super().__init__()
         self.config = config
         self.syringePump = syringe
         self.selectorValveSystem = selector_valves
+        self.disc_pump = disc_pump
 
         # Initialize timers
         self.progress_timer = QTimer(self)
@@ -328,6 +332,20 @@ class ManualControlWidget(QWidget):
         valveLayout.addWidget(self.valveCombo)
         valveGroupBox.setLayout(valveLayout)
         mainLayout.addWidget(valveGroupBox)
+
+        if self.config['application'] == "Open Chamber":
+            pumpGroupBox = QGroupBox("Disc Pump Control")
+            pumpLayout = QHBoxLayout()
+            pumpLayout.setContentsMargins(5, 5, 5, 5)
+            pumpLayout.addWidget(QLabel("Operation time:"))
+            self.pumpInput = QLineEdit()
+            pumpLayout.addWidget(self.pumpInput)
+            pumpLayout.addWidget(QLabel("s"))
+            self.pumpButton = QPushButton("Start")
+            pumpLayout.addWidget(self.pumpButton)
+            self.pumpButton.clicked.connect(self.startDiscPump)
+            pumpGroupBox.setLayout(pumpLayout)
+            mainLayout.addWidget(pumpGroupBox)
 
         # Syringe Pump Control
         syringeGroupBox = QGroupBox("Syringe Pump Control")
@@ -461,6 +479,12 @@ class ManualControlWidget(QWidget):
                                    Qt.QueuedConnection,
                                    Q_ARG(str, str(e)))
 
+    def startDiscPump(self):
+        if self.disc_pump is not None:
+            self.pumpButton.setEnabled(False)
+            self.disc_pump.aspirate(float(self.pumpInput.text()))
+            self.pumpButton.setEnabled(True)
+
     @pyqtSlot()
     def startProgressTimer(self):
         self.syringeProgressBar.setValue(0)
@@ -490,7 +514,6 @@ class ManualControlWidget(QWidget):
         self.syringePortCombo.setEnabled(enabled)
         self.speedCombo.setEnabled(enabled)
         self.volumeSpinBox.setEnabled(enabled)
-        #self.valveCombo.setEnabled(enabled)
 
     def updateProgress(self):
         if self.operation_start_time is None or self.operation_duration is None:
@@ -530,11 +553,14 @@ class FluidicsControlGUI(QMainWindow):
         self.controller.begin()
         self.controller.send_command(CMD_SET.CLEAR)
 
+        if self.config['application'] == "Open Chamber":
+            self.discPump = DiscPump(self.controller)
+
         self.syringePump = SyringePump(
                             sn=self.config['syringe_pump']['serial_number'],
                             syringe_ul=self.config['syringe_pump']['volume_ul'], 
                             speed_code_limit=self.config['syringe_pump']['speed_code_limit'],
-                            waste_port=3)
+                            waste_port=self.config['syringe_pump']['waste_port'])
         self.selectorValveSystem = SelectorValveSystem(self.controller, self.config)
 
         self.initUI()
@@ -545,13 +571,16 @@ class FluidicsControlGUI(QMainWindow):
 
         # Create tab widget
         tabWidget = QTabWidget()
-        
-        # "Run Experiments" tab
-        runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem)
-        tabWidget.addTab(runExperimentsTab, "Run Experiments")
 
         # "Settings and Manual Control" tab
-        manualControlTab = ManualControlWidget(self.config, self.syringePump, self.selectorValveSystem)
+        if self.config['application'] == "MERFISH":
+            runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem)
+            manualControlTab = ManualControlWidget(self.config, self.syringePump, self.selectorValveSystem)
+        elif self.config['application'] == "Open Chamber":
+            runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
+            manualControlTab = ManualControlWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
+
+        tabWidget.addTab(runExperimentsTab, "Run Experiments")
         tabWidget.addTab(manualControlTab, "Settings and Manual Control")
 
         self.setCentralWidget(tabWidget)

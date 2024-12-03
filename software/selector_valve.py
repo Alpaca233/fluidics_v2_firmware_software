@@ -1,4 +1,3 @@
-from controller import FluidControllerSimulation as FluidController
 from _def import CMD_SET
 
 class SelectorValve():
